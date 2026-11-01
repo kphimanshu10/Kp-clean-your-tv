@@ -19,11 +19,20 @@ export interface AppShortcut {
   activityName?: string;
   iconType: 'netmirror' | 'netflix' | 'youtube' | 'hotstar' | 'airtel' | 'more' | 'custom' | 'browser' | 'files' | 'vlc' | 'mxplayer' | 'spotify' | 'prime';
   customIcon?: string;
-  category: 'streaming' | 'tv' | 'utility' | 'system' | 'music';
+  category: 'streaming' | 'tv' | 'utility' | 'system' | 'music' | 'media';
   inDock: boolean;
   dockOrder: number;
   isPreinstalled: boolean;
+  isTrusted?: boolean;
+  isInstalled?: boolean;
   accentColor: string;
+}
+
+export type CricketServiceStatus = 'unconfigured' | 'loading' | 'live' | 'error' | 'offline';
+
+export interface CricketApiConfig {
+  endpointUrl: string;
+  apiKey: string;
 }
 
 export interface CricketMatch {
@@ -32,6 +41,7 @@ export interface CricketMatch {
   series: string;
   matchType: string;
   isLive: boolean;
+  matchStatusText?: string;
   team1: {
     name: string;
     code: string;

@@ -22,17 +22,21 @@ import { NotificationsModal } from './components/Modals/NotificationsModal';
 import { AppLaunchModal } from './components/Modals/AppLaunchModal';
 import { WallpaperModal } from './components/Modals/WallpaperModal';
 import { DynamicWallpaper } from './components/DynamicWallpaper';
-import { INITIAL_APPS, CRICKET_MATCHES } from './data/mockData';
+import { INITIAL_APPS } from './data/mockData';
 import { WALLPAPER_PRESETS } from './data/wallpapers';
-import { 
-  AppShortcut, CricketMatch, LauncherSettings, 
-  ScreenView, DeviceDiagnostics 
+import {
+  AppShortcut,
+  CricketApiConfig,
+  CricketMatch,
+  CricketServiceStatus,
+  LauncherSettings,
+  ScreenView,
+  DeviceDiagnostics,
 } from './types/launcher';
-import { 
-  SpatialNavState, handleSpatialDpad 
-} from './utils/launcherLogic';
+import { SpatialNavState, handleSpatialDpad } from './utils/launcherLogic';
 import { soundFx } from './utils/audio';
 import { detectDeviceEnvironment } from './utils/hardwareDetection';
+import { fetchLiveCricketMatches } from './services/cricketService';
 
 export default function App() {
   // Screen & Navigation States
@@ -48,35 +52,44 @@ export default function App() {
   // App Data & Persistence
   const [apps, setApps] = useState<AppShortcut[]>(() => {
     try {
-      const saved = localStorage.getItem('kptv_apps');
+      const saved = localStorage.getItem('kptv_apps_v2');
       return saved ? JSON.parse(saved) : INITIAL_APPS;
     } catch {
       return INITIAL_APPS;
     }
   });
 
-  const [activeCricketMatch, setActiveCricketMatch] = useState<CricketMatch>(CRICKET_MATCHES[0]);
+  // Live Cricket Score State (No hardcoded demo scores)
+  const [cricketStatus, setCricketStatus] = useState<CricketServiceStatus>('unconfigured');
+  const [cricketMatches, setCricketMatches] = useState<CricketMatch[]>([]);
+  const [activeCricketMatch, setActiveCricketMatch] = useState<CricketMatch | null>(null);
+  const [cricketError, setCricketError] = useState<string | null>(
+    'Live score service not configured.'
+  );
+  const [cricketLastUpdated, setCricketLastUpdated] = useState<string | null>(null);
 
   // Launcher Settings
   const [settings, setSettings] = useState<LauncherSettings>(() => {
     try {
       const saved = localStorage.getItem('kptv_settings');
-      return saved ? JSON.parse(saved) : {
-        clockFormat: '12h',
-        showDate: true,
-        wallpaperPreset: 'reference',
-        customWallpaperUrl: '',
-        soundEffects: true,
-        dpadSensitivity: 'normal',
-        defaultSetopboxPort: 'hdmi1',
-        simulateCloudTvOs: true,
-        safeRecoveryConfirmed: true,
-      };
+      return saved
+        ? JSON.parse(saved)
+        : {
+            clockFormat: '12h',
+            showDate: true,
+            wallpaperPreset: 'reference-mountain',
+            customWallpaperUrl: '',
+            soundEffects: true,
+            dpadSensitivity: 'normal',
+            defaultSetopboxPort: 'hdmi1',
+            simulateCloudTvOs: true,
+            safeRecoveryConfirmed: true,
+          };
     } catch {
       return {
         clockFormat: '12h',
         showDate: true,
-        wallpaperPreset: 'reference',
+        wallpaperPreset: 'reference-mountain',
         customWallpaperUrl: '',
         soundEffects: true,
         dpadSensitivity: 'normal',
@@ -88,13 +101,58 @@ export default function App() {
   });
 
   // Device Diagnostics
-  const [diagnostics, setDiagnostics] = useState<DeviceDiagnostics>(() => detectDeviceEnvironment());
+  const [diagnostics] = useState<DeviceDiagnostics>(() => detectDeviceEnvironment());
 
   // Active Modals
   const [activeModal, setActiveModal] = useState<
-    'none' | 'livetv' | 'setopbox' | 'cricket' | 'apps' | 'settings' | 'about' | 'wifi' | 'notifications' | 'wallpaper'
+    | 'none'
+    | 'livetv'
+    | 'setopbox'
+    | 'cricket'
+    | 'apps'
+    | 'settings'
+    | 'about'
+    | 'wifi'
+    | 'notifications'
+    | 'wallpaper'
   >('none');
   const [launchedApp, setLaunchedApp] = useState<AppShortcut | null>(null);
+
+  // Refresh Live Cricket Score
+  const refreshCricketScores = useCallback(async (configOverride?: CricketApiConfig) => {
+    setCricketStatus('loading');
+    const result = await fetchLiveCricketMatches(configOverride);
+    setCricketStatus(result.status);
+    setCricketMatches(result.matches);
+    setCricketError(result.errorMessage);
+    setCricketLastUpdated(result.lastUpdated);
+    if (result.matches.length > 0) {
+      setActiveCricketMatch(prev => {
+        if (prev) {
+          const found = result.matches.find(m => m.id === prev.id);
+          if (found) return found;
+        }
+        return result.matches[0];
+      });
+    } else {
+      setActiveCricketMatch(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCricketScores();
+    const handleOnline = () => refreshCricketScores();
+    const handleOffline = () => {
+      setCricketStatus('offline');
+      setCricketError('TV is currently offline. Check Wi-Fi connection.');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [refreshCricketScores]);
 
   // Sync Audio Settings
   useEffect(() => {
@@ -109,27 +167,34 @@ export default function App() {
   // Sync Apps Persistence
   useEffect(() => {
     try {
-      localStorage.setItem('kptv_apps', JSON.stringify(apps));
+      localStorage.setItem('kptv_apps_v2', JSON.stringify(apps));
     } catch {
       // ignore
     }
   }, [apps]);
 
   const dockApps = apps.filter(a => a.inDock).sort((a, b) => a.dockOrder - b.dockOrder);
+  // Total focusable items in dock = pinned dock apps + 1 ("+ More" button)
+  const totalDockButtons = dockApps.length + 1;
 
   // Determine active wallpaper render mode
   const activePreset = WALLPAPER_PRESETS.find(p => p.id === settings.wallpaperPreset);
-  const activeRenderMode = activePreset 
-    ? activePreset.renderMode 
-    : (settings.wallpaperPreset === 'custom' || settings.wallpaperPreset === 'custom-image' ? 'custom-image' : 'default-mountain');
+  const activeRenderMode = activePreset
+    ? activePreset.renderMode
+    : settings.wallpaperPreset === 'custom' || settings.wallpaperPreset === 'custom-image'
+    ? 'custom-image'
+    : 'default-mountain';
 
   // D-Pad Remote Direction Handler
-  const handleDpadMove = useCallback((direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
-    if (activeModal !== 'none' || launchedApp !== null) return;
-    soundFx.playFocus();
+  const handleDpadMove = useCallback(
+    (direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
+      if (activeModal !== 'none' || launchedApp !== null) return;
+      soundFx.playFocus();
 
-    setNavState(prev => handleSpatialDpad(direction, prev, dockApps.length));
-  }, [activeModal, launchedApp, dockApps.length]);
+      setNavState(prev => handleSpatialDpad(direction, prev, totalDockButtons));
+    },
+    [activeModal, launchedApp, totalDockButtons]
+  );
 
   // OK / Enter Action Handler
   const handleRemoteEnter = useCallback(() => {
@@ -175,6 +240,7 @@ export default function App() {
     }
     if (activeModal !== 'none') {
       setActiveModal('none');
+      setCurrentScreen('home');
       return;
     }
     // Return to main cards Home
@@ -200,6 +266,28 @@ export default function App() {
   // Keyboard Event Listeners for Physical Remote / Keyboard Arrows
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInputFocused =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+
+      // Allow normal typing inside input fields, except Escape to close modal
+      if (isInputFocused) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          handleRemoteBack();
+        }
+        return;
+      }
+
+      // Guard against accidental double activation on held Enter/Back
+      if (e.repeat && (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Backspace')) {
+        return;
+      }
+
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault();
@@ -218,17 +306,17 @@ export default function App() {
           handleDpadMove('RIGHT');
           break;
         case 'Enter':
-        case ' ':
-          e.preventDefault();
-          handleRemoteEnter();
+          if (activeModal === 'none') {
+            e.preventDefault();
+            handleRemoteEnter();
+          }
           break;
         case 'Escape':
         case 'Backspace':
           e.preventDefault();
           handleRemoteBack();
           break;
-        case 'h':
-        case 'H':
+        case 'Home':
           e.preventDefault();
           handleRemoteHome();
           break;
@@ -239,7 +327,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDpadMove, handleRemoteEnter, handleRemoteBack, handleRemoteHome]);
+  }, [activeModal, handleDpadMove, handleRemoteEnter, handleRemoteBack, handleRemoteHome]);
 
   // Toggle Pin/Unpin from Home Dock
   const handleToggleDockPin = (appId: string) => {
@@ -258,6 +346,26 @@ export default function App() {
         return app;
       })
     );
+  };
+
+  // Add custom application shortcut
+  const handleAddCustomShortcut = (newShortcut: Omit<AppShortcut, 'id' | 'dockOrder'>) => {
+    soundFx.playSelect();
+    setApps(prev => {
+      const maxOrder = Math.max(0, ...prev.filter(a => a.inDock).map(a => a.dockOrder));
+      const created: AppShortcut = {
+        ...newShortcut,
+        id: `custom-${Date.now()}`,
+        dockOrder: newShortcut.inDock ? maxOrder + 1 : 99,
+      };
+      return [...prev, created];
+    });
+  };
+
+  // Remove custom application shortcut (never removes preinstalled apps like Netflix/Prime Video)
+  const handleRemoveShortcut = (appId: string) => {
+    soundFx.playBack();
+    setApps(prev => prev.filter(app => app.isPreinstalled || app.id !== appId));
   };
 
   return (
@@ -307,7 +415,7 @@ export default function App() {
             }}
           />
 
-          {/* Card 2: Setopbox (Correct spelling!) */}
+          {/* Card 2: Setopbox */}
           <SetopboxCard
             isFocused={navState.zone === 'cards' && navState.cardIndex === 1}
             onSelect={() => {
@@ -319,6 +427,9 @@ export default function App() {
           {/* Card 3: Live Cricket Score */}
           <CricketScoreCard
             match={activeCricketMatch}
+            serviceStatus={cricketStatus}
+            errorMessage={cricketError}
+            lastUpdated={cricketLastUpdated}
             isFocused={navState.zone === 'cards' && navState.cardIndex === 2}
             onSelect={() => {
               soundFx.playSelect();
@@ -335,6 +446,14 @@ export default function App() {
         isFocusedZone={navState.zone === 'dock'}
         onLaunchApp={app => {
           soundFx.playSelect();
+          if (
+            typeof window !== 'undefined' &&
+            window.AndroidTvBridge &&
+            typeof window.AndroidTvBridge.launchApp === 'function'
+          ) {
+            const launched = window.AndroidTvBridge.launchApp(app.packageName);
+            if (launched) return;
+          }
           setLaunchedApp(app);
         }}
         onOpenMoreApps={() => {
@@ -354,9 +473,7 @@ export default function App() {
       />
 
       {/* Modals & Screens */}
-      {activeModal === 'livetv' && (
-        <LiveTvModal onClose={() => setActiveModal('none')} />
-      )}
+      {activeModal === 'livetv' && <LiveTvModal onClose={() => setActiveModal('none')} />}
 
       {activeModal === 'setopbox' && (
         <SetopboxModal
@@ -368,8 +485,13 @@ export default function App() {
 
       {activeModal === 'cricket' && (
         <CricketScoreModal
+          matches={cricketMatches}
           currentMatch={activeCricketMatch}
+          serviceStatus={cricketStatus}
+          errorMessage={cricketError}
+          lastUpdated={cricketLastUpdated}
           onSelectMatch={m => setActiveCricketMatch(m)}
+          onRefresh={refreshCricketScores}
           onClose={() => setActiveModal('none')}
         />
       )}
@@ -377,12 +499,18 @@ export default function App() {
       {activeModal === 'apps' && (
         <AppDrawerModal
           allApps={apps}
-          onClose={() => setActiveModal('none')}
+          onClose={() => {
+            setActiveModal('none');
+            setCurrentScreen('home');
+          }}
           onLaunchApp={app => {
             setActiveModal('none');
+            setCurrentScreen('home');
             setLaunchedApp(app);
           }}
           onToggleDockPin={handleToggleDockPin}
+          onAddCustomShortcut={handleAddCustomShortcut}
+          onRemoveShortcut={handleRemoveShortcut}
         />
       )}
 
@@ -392,7 +520,10 @@ export default function App() {
           diagnostics={diagnostics}
           onUpdateSettings={newS => setSettings(s => ({ ...s, ...newS }))}
           onOpenWallpaperStudio={() => setActiveModal('wallpaper')}
-          onClose={() => setActiveModal('none')}
+          onClose={() => {
+            setActiveModal('none');
+            setCurrentScreen('home');
+          }}
         />
       )}
 
@@ -401,31 +532,41 @@ export default function App() {
           currentPresetId={settings.wallpaperPreset}
           customImageUrl={settings.customWallpaperUrl}
           onSelectPreset={presetId => setSettings(s => ({ ...s, wallpaperPreset: presetId }))}
-          onSetCustomImage={dataUrl => setSettings(s => ({ ...s, wallpaperPreset: 'custom-image', customWallpaperUrl: dataUrl }))}
-          onResetToDefault={() => setSettings(s => ({ ...s, wallpaperPreset: 'reference-mountain', customWallpaperUrl: '' }))}
+          onSetCustomImage={dataUrl =>
+            setSettings(s => ({
+              ...s,
+              wallpaperPreset: 'custom-image',
+              customWallpaperUrl: dataUrl,
+            }))
+          }
+          onResetToDefault={() =>
+            setSettings(s => ({
+              ...s,
+              wallpaperPreset: 'reference-mountain',
+              customWallpaperUrl: '',
+            }))
+          }
           onClose={() => setActiveModal('none')}
         />
       )}
 
       {activeModal === 'about' && (
-        <AboutModal onClose={() => setActiveModal('none')} />
+        <AboutModal
+          onClose={() => {
+            setActiveModal('none');
+            setCurrentScreen('home');
+          }}
+        />
       )}
 
-      {activeModal === 'wifi' && (
-        <WifiModal onClose={() => setActiveModal('none')} />
-      )}
+      {activeModal === 'wifi' && <WifiModal onClose={() => setActiveModal('none')} />}
 
       {activeModal === 'notifications' && (
         <NotificationsModal onClose={() => setActiveModal('none')} />
       )}
 
       {/* App Launch Confirmation Modal */}
-      {launchedApp && (
-        <AppLaunchModal
-          app={launchedApp}
-          onClose={() => setLaunchedApp(null)}
-        />
-      )}
+      {launchedApp && <AppLaunchModal app={launchedApp} onClose={() => setLaunchedApp(null)} />}
     </div>
   );
 }

@@ -96,10 +96,27 @@ export const BottomDock: React.FC<BottomDockProps> = ({
               </div>
             )}
 
+            {app.id === 'prime' && (
+              <div className="flex flex-col items-center justify-center">
+                <span className="text-xs font-black text-[#00A8E1] tracking-tight lowercase">
+                  prime
+                </span>
+                <span className="text-[9px] font-bold text-white tracking-widest uppercase">
+                  video
+                </span>
+              </div>
+            )}
+
             {/* Fallback for additional apps */}
-            {!['netmirror', 'netflix', 'youtube', 'hotstar', 'airtel'].includes(app.id) && (
+            {!['netmirror', 'netflix', 'youtube', 'hotstar', 'airtel', 'prime'].includes(app.id) && (
               <div className="flex flex-col items-center justify-center px-2">
-                <span className="text-xs font-bold text-white truncate max-w-[80px]">
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white font-black text-xs mb-0.5"
+                  style={{ backgroundColor: app.accentColor || '#0284c7' }}
+                >
+                  {app.name.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-[10px] font-bold text-white truncate max-w-[80px]">
                   {app.name}
                 </span>
               </div>

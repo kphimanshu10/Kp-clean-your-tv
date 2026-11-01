@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Search, Pin, PinOff, Play, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { X, Search, Pin, PinOff, Play, Plus, Trash2, Check } from 'lucide-react';
 import { AppShortcut } from '../../types/launcher';
 
 interface AppDrawerModalProps {
@@ -7,6 +7,8 @@ interface AppDrawerModalProps {
   onClose: () => void;
   onLaunchApp: (app: AppShortcut) => void;
   onToggleDockPin: (appId: string) => void;
+  onAddCustomShortcut: (shortcut: Omit<AppShortcut, 'id' | 'dockOrder'>) => void;
+  onRemoveShortcut: (appId: string) => void;
 }
 
 export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
@@ -14,21 +16,30 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
   onClose,
   onLaunchApp,
   onToggleDockPin,
+  onAddCustomShortcut,
+  onRemoveShortcut,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'alpha' | 'default'>('default');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newAppName, setNewAppName] = useState('');
+  const [newPackageName, setNewPackageName] = useState('');
+  const [newCategory, setNewCategory] = useState<AppShortcut['category']>('streaming');
+  const [pinOnCreate, setPinOnCreate] = useState(true);
 
   const categories = [
     { id: 'all', label: 'All Applications' },
     { id: 'streaming', label: 'Streaming' },
     { id: 'media', label: 'Video & Audio' },
+    { id: 'music', label: 'Music' },
     { id: 'utility', label: 'Tools & System' },
   ];
 
   let filtered = allApps.filter(app => {
-    const matchesSearch = app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          app.packageName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch =
+      app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.packageName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCat = selectedCategory === 'all' || app.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
@@ -36,6 +47,27 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
   if (sortBy === 'alpha') {
     filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
   }
+
+  const handleCreateShortcut = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAppName.trim() || !newPackageName.trim()) return;
+
+    onAddCustomShortcut({
+      name: newAppName.trim(),
+      packageName: newPackageName.trim(),
+      iconType: 'custom',
+      category: newCategory,
+      inDock: pinOnCreate,
+      isPreinstalled: false,
+      isTrusted: true,
+      isInstalled: true,
+      accentColor: '#0284c7',
+    });
+
+    setNewAppName('');
+    setNewPackageName('');
+    setShowAddForm(false);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-2xl p-8 select-none">
@@ -45,17 +77,17 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
           <div className="flex items-center space-x-3">
             <h2 className="text-2xl font-black text-white tracking-tight">Applications Drawer</h2>
             <span className="text-xs bg-slate-800 text-cyan-300 font-bold px-3 py-1 rounded-full border border-white/10">
-              {filtered.length} Apps Installed
+              {filtered.length} Apps Available
             </span>
           </div>
 
           {/* Search bar */}
-          <div className="flex items-center space-x-3 flex-1 max-w-md mx-6">
+          <div className="flex items-center space-x-3 flex-1 max-w-sm mx-4">
             <div className="relative w-full">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search TV applications or packages..."
+                placeholder="Search TV applications or package ID..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-400 transition-colors"
@@ -65,9 +97,19 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
 
           <div className="flex items-center space-x-2">
             <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{showAddForm ? 'Cancel' : 'Add App Shortcut'}</span>
+            </button>
+
+            <button
               onClick={() => setSortBy(sortBy === 'alpha' ? 'default' : 'alpha')}
               className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                sortBy === 'alpha' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white'
+                sortBy === 'alpha'
+                  ? 'bg-cyan-600 text-white'
+                  : 'bg-slate-800 text-slate-300 hover:text-white'
               }`}
             >
               {sortBy === 'alpha' ? 'A-Z Sorted' : 'Sort: Default'}
@@ -82,6 +124,67 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Add Custom App Shortcut Form */}
+        {showAddForm && (
+          <form
+            onSubmit={handleCreateShortcut}
+            className="my-3 p-4 rounded-2xl bg-slate-950 border border-cyan-500/40 grid grid-cols-1 md:grid-cols-4 gap-3 items-end text-xs"
+          >
+            <div>
+              <label className="text-slate-400 block mb-1">Application Label</label>
+              <input
+                type="text"
+                placeholder="e.g. Kodi TV"
+                value={newAppName}
+                onChange={e => setNewAppName(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 block mb-1">Android Package Name</label>
+              <input
+                type="text"
+                placeholder="e.g. org.xbmc.kodi"
+                value={newPackageName}
+                onChange={e => setNewPackageName(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 block mb-1">Category</label>
+              <select
+                value={newCategory}
+                onChange={e => setNewCategory(e.target.value as AppShortcut['category'])}
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
+              >
+                <option value="streaming">Streaming</option>
+                <option value="media">Video & Audio</option>
+                <option value="music">Music</option>
+                <option value="utility">Utility</option>
+              </select>
+            </div>
+            <div className="flex items-center space-x-2">
+              <label className="flex items-center space-x-1.5 text-slate-300 cursor-pointer mr-2">
+                <input
+                  type="checkbox"
+                  checked={pinOnCreate}
+                  onChange={e => setPinOnCreate(e.target.checked)}
+                />
+                <span>Pin to Dock</span>
+              </label>
+              <button
+                type="submit"
+                className="flex-1 py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Add</span>
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Category Filter Pills */}
         <div className="flex space-x-2 py-3 border-b border-white/5">
@@ -116,16 +219,18 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
                   >
                     {app.name.charAt(0)}
                   </div>
-                  <div className="overflow-hidden">
+                  <div className="overflow-hidden flex-1">
                     <h3 className="text-sm font-bold text-white truncate">{app.name}</h3>
-                    <p className="text-[10px] text-slate-400 font-mono truncate">{app.packageName}</p>
+                    <p className="text-[10px] text-slate-400 font-mono truncate">
+                      {app.packageName}
+                    </p>
                     <span className="inline-block mt-1 text-[9px] uppercase font-bold text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/40">
                       {app.category}
                     </span>
                   </div>
                 </div>
 
-                {/* Actions: Launch & Pin to Home Dock */}
+                {/* Actions: Launch, Pin to Home Dock, and Remove Custom Shortcut */}
                 <div className="flex items-center space-x-2 pt-2 border-t border-white/5">
                   <button
                     onClick={() => onLaunchApp(app)}
@@ -146,6 +251,16 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
                   >
                     {app.inDock ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
                   </button>
+
+                  {!app.isPreinstalled && (
+                    <button
+                      onClick={() => onRemoveShortcut(app.id)}
+                      title="Remove custom shortcut"
+                      className="p-2 rounded-xl bg-slate-800 text-red-400 hover:bg-red-950 hover:text-red-300 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

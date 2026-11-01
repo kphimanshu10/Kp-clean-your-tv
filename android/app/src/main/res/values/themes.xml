@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.KPTVLauncher" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/tv_navy_bg</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:statusBarColor">@color/tv_navy_bg</item>
+        <item name="colorPrimary">@color/tv_neon_blue</item>
+        <item name="colorAccent">@color/tv_neon_blue</item>
+    </style>
+</resources>

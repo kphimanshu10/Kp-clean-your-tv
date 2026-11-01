@@ -1,0 +1,13 @@
+<resources>
+    <color name="tv_navy_bg">#030712</color>
+    <color name="tv_surface_dark">#0F172A</color>
+    <color name="tv_neon_blue">#38BDF8</color>
+    <color name="tv_neon_purple">#D946EF</color>
+    <color name="tv_card_blue_start">#0284C7</color>
+    <color name="tv_card_blue_end">#1E3A8A</color>
+    <color name="tv_card_purple_start">#C026D3</color>
+    <color name="tv_card_purple_end">#4C1D95</color>
+    <color name="tv_cricket_gold">#FACC15</color>
+    <color name="white">#FFFFFF</color>
+    <color name="text_muted">#94A3B8</color>
+</resources>

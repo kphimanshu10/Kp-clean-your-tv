@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">KP TV – Smart TV Launcher</string>
+    <string name="live_tv">Live TV</string>
+    <string name="live_tv_channels">Live TV Channels</string>
+    <string name="setopbox">Setopbox</string>
+    <string name="watch_setopbox">Watch Setopbox</string>
+    <string name="live_score">LIVE</string>
+    <string name="cricket_unconfigured">Live score service not configured.</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_apps">Apps</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_about">About</string>
+</resources>

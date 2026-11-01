@@ -1,23 +1,36 @@
 import React from 'react';
-import { CricketMatch } from '../../types/launcher';
+import { CricketMatch, CricketServiceStatus } from '../../types/launcher';
+import { RefreshCw, WifiOff, AlertCircle, Settings2 } from 'lucide-react';
 
 interface CricketScoreCardProps {
-  match: CricketMatch;
+  match: CricketMatch | null;
+  serviceStatus: CricketServiceStatus;
+  errorMessage?: string | null;
+  lastUpdated?: string | null;
   isFocused: boolean;
   onSelect: () => void;
 }
 
 export const CricketScoreCard: React.FC<CricketScoreCardProps> = ({
   match,
+  serviceStatus,
+  errorMessage,
+  lastUpdated,
   isFocused,
   onSelect,
 }) => {
+  const isLive = serviceStatus === 'live' && match !== null;
+
   return (
     <div
       onClick={onSelect}
       role="button"
       tabIndex={0}
-      aria-label={`Live Cricket: ${match.title}, ${match.team1.code} ${match.team1.score} vs ${match.team2.code} ${match.team2.score}`}
+      aria-label={
+        isLive && match
+          ? `Live Cricket: ${match.title}, ${match.team1.code} ${match.team1.score} vs ${match.team2.code} ${match.team2.score}`
+          : 'Live Cricket Score Card - Click to configure or refresh'
+      }
       className={`relative flex-[1.3] min-w-[340px] h-64 rounded-3xl flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-300 select-none ${
         isFocused
           ? 'ring-4 ring-cyan-400 shadow-[0_0_40px_rgba(56,189,248,0.9)] scale-[1.03] z-20'
@@ -87,96 +100,128 @@ export const CricketScoreCard: React.FC<CricketScoreCardProps> = ({
         </svg>
       </div>
 
-      {/* Top Bar: LIVE badge & Match Title */}
+      {/* Top Bar: LIVE / Status badge & Match Title */}
       <div className="relative z-10 px-5 pt-4 flex items-center justify-between">
-        <div className="flex items-center space-x-2 bg-red-600/90 text-white text-xs font-bold px-3 py-1 rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] border border-red-400/50">
-          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-          <span className="tracking-wider">LIVE</span>
-        </div>
+        {isLive ? (
+          <div className="flex items-center space-x-2 bg-red-600/90 text-white text-xs font-bold px-3 py-1 rounded-full shadow-[0_0_12px_rgba(239,68,68,0.8)] border border-red-400/50">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className="tracking-wider">LIVE</span>
+          </div>
+        ) : (
+          <div className="flex items-center space-x-1.5 bg-slate-900/90 text-cyan-300 text-[11px] font-bold px-3 py-1 rounded-full border border-cyan-500/40">
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span className="tracking-wider uppercase">{serviceStatus}</span>
+          </div>
+        )}
 
         <div className="flex flex-col items-end">
           <h2 className="text-xl font-extrabold text-white tracking-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-            {match.title}
+            {isLive && match ? match.title : 'Live Cricket Score'}
           </h2>
           <span className="text-xs font-semibold text-slate-300">
-            {match.series}
+            {isLive && match
+              ? match.series
+              : lastUpdated
+              ? `Updated ${lastUpdated}`
+              : 'Real-Time Sports Feed'}
           </span>
         </div>
       </div>
 
-      {/* Middle: Teams, Emblems, VS, and Scores */}
-      <div className="relative z-10 px-5 py-2 flex items-center justify-between">
-        {/* Team 1: IND */}
-        <div className="flex flex-col items-center flex-1">
-          {/* India Flag Round Emblem */}
-          <div className="w-13 h-13 rounded-full border-2 border-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col justify-between relative bg-white">
-            {/* Saffron band */}
-            <div className="w-full h-1/3 bg-[#FF9933]" />
-            {/* White band with Ashoka Chakra */}
-            <div className="w-full h-1/3 bg-white flex items-center justify-center">
-              <div className="w-3.5 h-3.5 rounded-full border border-[#000088] flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#000088]" />
-              </div>
+      {/* Middle: Live Match Scores OR Honest Service State */}
+      {isLive && match ? (
+        <div className="relative z-10 px-5 py-2 flex items-center justify-between">
+          {/* Team 1 */}
+          <div className="flex flex-col items-center flex-1">
+            <div className="w-12 h-12 rounded-full border-2 border-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.5)] bg-slate-900/90 flex items-center justify-center">
+              <span className="text-sm font-black text-cyan-300">{match.team1.code}</span>
             </div>
-            {/* Green band */}
-            <div className="w-full h-1/3 bg-[#128807]" />
+            <span className="text-xs font-bold text-slate-200 mt-1 uppercase tracking-wider truncate max-w-[110px]">
+              {match.team1.name}
+            </span>
+            <span className="text-2xl font-black text-white font-rajdhani tracking-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+              {match.team1.score}
+            </span>
+            <span className="text-[11px] font-medium text-slate-300">
+              {match.team1.overs}
+            </span>
           </div>
 
-          <span className="text-xs font-bold text-slate-200 mt-1 uppercase tracking-wider">
-            {match.team1.code}
-          </span>
-          <span className="text-2xl font-black text-white font-rajdhani tracking-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
-            {match.team1.score}
-          </span>
-          <span className="text-[11px] font-medium text-slate-300">
-            {match.team1.overs}
-          </span>
-        </div>
-
-        {/* Stylized Golden VS Badge */}
-        <div className="px-3 flex flex-col items-center">
-          <span className="text-2xl font-black italic tracking-tighter bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent drop-shadow-[0_2px_8px_rgba(245,158,11,0.6)]">
-            VS
-          </span>
-        </div>
-
-        {/* Team 2: AUS */}
-        <div className="flex flex-col items-center flex-1">
-          {/* Australia Flag Round Emblem */}
-          <div className="w-13 h-13 rounded-full border-2 border-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.5)] overflow-hidden relative bg-[#00008b] flex items-center justify-center">
-            {/* Union jack corner representation */}
-            <div className="absolute top-0 left-0 w-6 h-4 bg-[#00008b] border-r border-b border-white/40">
-              <div className="w-full h-full relative">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-full h-0.5 bg-red-600" />
-                </div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="h-full w-0.5 bg-red-600" />
-                </div>
-              </div>
-            </div>
-            {/* Southern Cross stars */}
-            <div className="absolute right-1.5 top-2 w-1.5 h-1.5 text-white text-[8px] leading-none">★</div>
-            <div className="absolute right-3.5 bottom-2 w-1.5 h-1.5 text-white text-[8px] leading-none">★</div>
-            <div className="absolute right-1 bottom-4 w-1 h-1 text-white text-[7px] leading-none">★</div>
+          {/* Stylized Golden VS Badge */}
+          <div className="px-3 flex flex-col items-center">
+            <span className="text-2xl font-black italic tracking-tighter bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent drop-shadow-[0_2px_8px_rgba(245,158,11,0.6)]">
+              VS
+            </span>
           </div>
 
-          <span className="text-xs font-bold text-slate-200 mt-1 uppercase tracking-wider">
-            {match.team2.code}
-          </span>
-          <span className="text-2xl font-black text-white font-rajdhani tracking-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
-            {match.team2.score}
-          </span>
-          <span className="text-[11px] font-medium text-slate-300">
-            {match.team2.overs}
-          </span>
+          {/* Team 2 */}
+          <div className="flex flex-col items-center flex-1">
+            <div className="w-12 h-12 rounded-full border-2 border-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.5)] bg-slate-900/90 flex items-center justify-center">
+              <span className="text-sm font-black text-amber-300">{match.team2.code}</span>
+            </div>
+            <span className="text-xs font-bold text-slate-200 mt-1 uppercase tracking-wider truncate max-w-[110px]">
+              {match.team2.name}
+            </span>
+            <span className="text-2xl font-black text-white font-rajdhani tracking-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+              {match.team2.score}
+            </span>
+            <span className="text-[11px] font-medium text-slate-300">
+              {match.team2.overs}
+            </span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="relative z-10 px-5 py-2 flex flex-col items-center justify-center text-center flex-1">
+          <div className="p-3 rounded-2xl bg-slate-950/75 border border-white/15 backdrop-blur-md max-w-xs w-full flex flex-col items-center space-y-1.5">
+            {serviceStatus === 'loading' && (
+              <>
+                <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
+                <p className="text-xs font-bold text-white">Fetching live match data...</p>
+              </>
+            )}
+            {serviceStatus === 'offline' && (
+              <>
+                <WifiOff className="w-6 h-6 text-amber-400" />
+                <p className="text-xs font-bold text-white">TV Offline</p>
+                <p className="text-[11px] text-slate-300">Connect Wi-Fi to load live scores.</p>
+              </>
+            )}
+            {serviceStatus === 'error' && (
+              <>
+                <AlertCircle className="w-6 h-6 text-red-400" />
+                <p className="text-xs font-bold text-white">Score Feed Error</p>
+                <p className="text-[10px] text-slate-300 line-clamp-2">
+                  {errorMessage || 'Unable to load cricket scores.'}
+                </p>
+              </>
+            )}
+            {serviceStatus === 'unconfigured' && (
+              <>
+                <Settings2 className="w-6 h-6 text-cyan-300" />
+                <p className="text-sm font-extrabold text-white">
+                  Live score service not configured.
+                </p>
+                <p className="text-[10px] text-slate-300">
+                  Press OK to configure your CricAPI key or live match JSON endpoint.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
-      {/* Bottom Golden Match Status Banner matching reference image */}
+      {/* Bottom Golden Match Status Banner */}
       <div className="relative z-10 w-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 py-2.5 px-4 flex items-center justify-center shadow-[0_-4px_20px_rgba(245,158,11,0.4)]">
-        <span className="text-xs md:text-sm font-black text-slate-950 tracking-wider text-center drop-shadow-[0_1px_1px_rgba(255,255,255,0.4)] uppercase">
-          {match.targetSummary}
+        <span className="text-xs md:text-sm font-black text-slate-950 tracking-wider text-center drop-shadow-[0_1px_1px_rgba(255,255,255,0.4)] uppercase truncate">
+          {isLive && match
+            ? match.targetSummary
+            : serviceStatus === 'unconfigured'
+            ? 'Live score service not configured.'
+            : serviceStatus === 'loading'
+            ? 'Syncing live cricket scoreboard...'
+            : serviceStatus === 'offline'
+            ? 'Offline • Check network connection'
+            : errorMessage || 'Live score service unavailable'}
         </span>
       </div>
     </div>

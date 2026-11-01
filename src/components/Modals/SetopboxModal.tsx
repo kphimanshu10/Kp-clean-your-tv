@@ -1,10 +1,20 @@
 import React, { useState } from 'react';
-import { X, Tv, AlertTriangle, CheckCircle2, Sliders, ExternalLink, ShieldCheck } from 'lucide-react';
+import { X, Tv, AlertTriangle, CheckCircle2, ExternalLink, Info } from 'lucide-react';
 
 interface SetopboxModalProps {
   onClose: () => void;
   defaultPort: 'hdmi1' | 'hdmi2' | 'av';
   onSaveDefaultPort: (port: 'hdmi1' | 'hdmi2' | 'av') => void;
+}
+
+declare global {
+  interface Window {
+    AndroidTvBridge?: {
+      switchHdmiInput?: (port: string) => boolean;
+      launchApp?: (packageName: string) => boolean;
+      getInstalledApps?: () => string;
+    };
+  }
 }
 
 export const SetopboxModal: React.FC<SetopboxModalProps> = ({
@@ -13,17 +23,39 @@ export const SetopboxModal: React.FC<SetopboxModalProps> = ({
   onSaveDefaultPort,
 }) => {
   const [activePort, setActivePort] = useState<'hdmi1' | 'hdmi2' | 'av'>(defaultPort);
-  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [switchAttemptResult, setSwitchAttemptResult] = useState<{
+    supported: boolean;
+    message: string;
+  } | null>(null);
 
   const handleSelectPort = (port: 'hdmi1' | 'hdmi2' | 'av') => {
     setActivePort(port);
     onSaveDefaultPort(port);
-    setFeedbackMsg(`Configured ${port.toUpperCase()} as default Setopbox input.`);
+    setSwitchAttemptResult(null);
   };
 
-  const handleTriggerHardwareSource = () => {
-    // Transparently informs the user regarding Cloud TV OS hardware behavior
-    setFeedbackMsg(`Broadcasting Android TV Input Intent for ${activePort.toUpperCase()}...`);
+  const handleAttemptHardwareSwitch = () => {
+    // Only attempt direct HDMI switching if a documented native TV bridge API is exposed
+    if (
+      typeof window !== 'undefined' &&
+      window.AndroidTvBridge &&
+      typeof window.AndroidTvBridge.switchHdmiInput === 'function'
+    ) {
+      const switched = window.AndroidTvBridge.switchHdmiInput(activePort);
+      if (switched) {
+        setSwitchAttemptResult({
+          supported: true,
+          message: `Switched TV input to ${activePort.toUpperCase()} via Android TV Input Framework.`,
+        });
+        return;
+      }
+    }
+
+    // Never pretend that the input was switched when unsupported
+    setSwitchAttemptResult({
+      supported: false,
+      message: `Direct HDMI input switching to ${activePort.toUpperCase()} is not exposed by the current OS/browser runtime. Please press the "SOURCE" or "INPUT" button on your physical Iconic TV remote and select ${activePort.toUpperCase()}.`,
+    });
   };
 
   return (
@@ -38,7 +70,7 @@ export const SetopboxModal: React.FC<SetopboxModalProps> = ({
             <div>
               <h2 className="text-xl font-extrabold text-white">Setopbox Input Hub</h2>
               <p className="text-xs text-slate-400">
-                Hardware HDMI Source Selector & DTH Cable Receiver
+                Preferred HDMI / AV Source Preference & Manual Remote Instructions
               </p>
             </div>
           </div>
@@ -53,9 +85,9 @@ export const SetopboxModal: React.FC<SetopboxModalProps> = ({
         </div>
 
         {/* Input Ports Selector */}
-        <div className="py-6">
+        <div className="py-5">
           <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">
-            Select Active Input Port
+            Select Preferred Setopbox Input Port
           </h3>
 
           <div className="grid grid-cols-3 gap-4">
@@ -76,7 +108,7 @@ export const SetopboxModal: React.FC<SetopboxModalProps> = ({
                 Primary Set-top Box / DTH
               </span>
               <span className="text-[10px] text-slate-400 mt-2 block font-mono">
-                1080p 60Hz • HDCP 2.2
+                1080p / 720p Digital HDMI
               </span>
             </button>
 
@@ -94,10 +126,10 @@ export const SetopboxModal: React.FC<SetopboxModalProps> = ({
                 {activePort === 'hdmi2' && <CheckCircle2 className="w-4 h-4 text-fuchsia-400" />}
               </div>
               <span className="text-xs text-slate-300 font-medium block">
-                Secondary Set-top Box
+                Secondary HDMI Port
               </span>
               <span className="text-[10px] text-slate-400 mt-2 block font-mono">
-                ARC / CEC Enabled
+                HDMI ARC / External Box
               </span>
             </button>
 
@@ -111,44 +143,63 @@ export const SetopboxModal: React.FC<SetopboxModalProps> = ({
               }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-base font-extrabold text-white">AV / Composite</span>
+                <span className="text-base font-extrabold text-white">AV / RCA</span>
                 {activePort === 'av' && <CheckCircle2 className="w-4 h-4 text-fuchsia-400" />}
               </div>
               <span className="text-xs text-slate-300 font-medium block">
-                Analog Cable / RCA
+                Composite Cable Input
               </span>
               <span className="text-[10px] text-slate-400 mt-2 block font-mono">
-                480i / 576i Standard Def
+                Yellow / White / Red RCA
               </span>
             </button>
           </div>
         </div>
 
-        {/* Feedback message banner if triggered */}
-        {feedbackMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-fuchsia-950/80 border border-fuchsia-400/50 text-fuchsia-200 text-xs font-semibold flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-fuchsia-400 shrink-0" />
-            <span>{feedbackMsg}</span>
+        {/* Honest Hardware Switch Attempt Status */}
+        {switchAttemptResult && (
+          <div
+            className={`mb-4 p-3.5 rounded-xl border text-xs font-semibold flex items-start space-x-2.5 ${
+              switchAttemptResult.supported
+                ? 'bg-emerald-950/80 border-emerald-400/50 text-emerald-200'
+                : 'bg-amber-950/80 border-amber-400/50 text-amber-200'
+            }`}
+          >
+            {switchAttemptResult.supported ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            )}
+            <span>{switchAttemptResult.message}</span>
           </div>
         )}
 
-        {/* Technical Guidance & Iconic TV Compatibility Note */}
+        {/* Clear Manual Instructions */}
         <div className="p-4 rounded-2xl bg-slate-950/80 border border-amber-500/30 flex items-start space-x-3 mb-6">
           <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-xs text-slate-300 space-y-1">
+          <div className="text-xs text-slate-300 space-y-1.5">
             <span className="font-bold text-amber-300 block">
-              Iconic 32" Smart TV (Cloud TV OS) Hardware Input Notice:
+              How to Watch Setopbox on Iconic 32" Smart TV (Cloud TV OS):
             </span>
-            <p>
-              Like most AOSP / Cloud TV operating systems, hardware video decoders for HDMI are managed by the TV firmware. Third-party applications cannot silently take over physical HDMI switching without system permissions.
-            </p>
-            <p className="text-slate-400">
-              👉 If your TV remote does not switch automatically: Press the <strong className="text-white">"Source"</strong> or <strong className="text-white">"Input"</strong> button on your physical remote and select <strong className="text-fuchsia-300">{activePort.toUpperCase()}</strong>.
-            </p>
+            <ol className="list-decimal pl-4 space-y-1 text-slate-300">
+              <li>
+                Ensure your DTH / Cable Setopbox is powered ON and connected to{' '}
+                <strong className="text-fuchsia-300">{activePort.toUpperCase()}</strong>.
+              </li>
+              <li>
+                On the native Android APK, KP TV checks if your TV firmware exposes the Android TV Input Framework (<code className="text-cyan-300">TvInputManager</code>).
+              </li>
+              <li>
+                If your TV firmware locks direct HDMI switching to system apps only, press the{' '}
+                <strong className="text-white">SOURCE</strong> or{' '}
+                <strong className="text-white">INPUT</strong> button on your physical TV remote and select{' '}
+                <strong className="text-fuchsia-300">{activePort.toUpperCase()}</strong>.
+              </li>
+            </ol>
           </div>
         </div>
 
-        {/* Action Button */}
+        {/* Action Buttons */}
         <div className="flex justify-end space-x-3">
           <button
             onClick={onClose}
@@ -157,11 +208,11 @@ export const SetopboxModal: React.FC<SetopboxModalProps> = ({
             Close
           </button>
           <button
-            onClick={handleTriggerHardwareSource}
+            onClick={handleAttemptHardwareSwitch}
             className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white text-xs font-bold shadow-[0_0_20px_rgba(217,70,239,0.5)] transition-all flex items-center space-x-2 cursor-pointer"
           >
             <ExternalLink className="w-4 h-4" />
-            <span>Switch to {activePort.toUpperCase()}</span>
+            <span>Attempt {activePort.toUpperCase()} Input Switch</span>
           </button>
         </div>
       </div>
