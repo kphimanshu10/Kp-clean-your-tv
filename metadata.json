@@ -1,0 +1,6 @@
+{
+  "name": "KP TV – Smart TV Launcher",
+  "description": "Premium Android Smart TV launcher for 32-inch TVs with neon glassmorphism UI, D-pad remote navigation, Live TV, Setopbox control, live cricket scores, and Android Studio project generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

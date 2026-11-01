@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.font-rajdhani {
+  font-family: 'Rajdhani', sans-serif;
+}
+
+/* Custom TV glow and glassmorphism effects */
+.tv-card-glow-blue {
+  box-shadow: 0 0 25px -3px rgba(14, 165, 233, 0.45), 0 0 50px -10px rgba(59, 130, 246, 0.35);
+}
+
+.tv-card-glow-purple {
+  box-shadow: 0 0 25px -3px rgba(217, 70, 239, 0.45), 0 0 50px -10px rgba(168, 85, 247, 0.35);
+}
+
+.tv-focused-glow {
+  outline: 3px solid #38bdf8 !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 25px rgba(56, 189, 248, 0.8), 0 0 45px rgba(59, 130, 246, 0.5) !important;
+  transform: scale(1.04) !important;
+  z-index: 30 !important;
+}
+
+/* Hide scrollbars on TV interface */
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
