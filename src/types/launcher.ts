@@ -85,6 +85,18 @@ export interface LauncherSettings {
   defaultSetopboxPort: 'hdmi1' | 'hdmi2' | 'av';
   simulateCloudTvOs: boolean;
   safeRecoveryConfirmed: boolean;
+  weatherLocation: string;
+  temperatureUnit: 'C' | 'F';
+}
+
+export interface WeatherData {
+  locationName: string;
+  temperature: number;
+  unit: 'C' | 'F';
+  conditionText: string;
+  conditionCode: number;
+  isDay: boolean;
+  lastUpdated: string;
 }
 
 export interface DeviceDiagnostics {

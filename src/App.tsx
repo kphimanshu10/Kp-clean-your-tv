@@ -70,33 +70,24 @@ export default function App() {
 
   // Launcher Settings
   const [settings, setSettings] = useState<LauncherSettings>(() => {
+    const defaults: LauncherSettings = {
+      clockFormat: '12h',
+      showDate: true,
+      wallpaperPreset: 'reference-mountain',
+      customWallpaperUrl: '',
+      soundEffects: true,
+      dpadSensitivity: 'normal',
+      defaultSetopboxPort: 'hdmi1',
+      simulateCloudTvOs: true,
+      safeRecoveryConfirmed: true,
+      weatherLocation: 'New Delhi',
+      temperatureUnit: 'C',
+    };
     try {
       const saved = localStorage.getItem('kptv_settings');
-      return saved
-        ? JSON.parse(saved)
-        : {
-            clockFormat: '12h',
-            showDate: true,
-            wallpaperPreset: 'reference-mountain',
-            customWallpaperUrl: '',
-            soundEffects: true,
-            dpadSensitivity: 'normal',
-            defaultSetopboxPort: 'hdmi1',
-            simulateCloudTvOs: true,
-            safeRecoveryConfirmed: true,
-          };
+      return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
     } catch {
-      return {
-        clockFormat: '12h',
-        showDate: true,
-        wallpaperPreset: 'reference-mountain',
-        customWallpaperUrl: '',
-        soundEffects: true,
-        dpadSensitivity: 'normal',
-        defaultSetopboxPort: 'hdmi1',
-        simulateCloudTvOs: true,
-        safeRecoveryConfirmed: true,
-      };
+      return defaults;
     }
   });
 
@@ -380,6 +371,8 @@ export default function App() {
       <Header
         clockFormat={settings.clockFormat}
         showDate={settings.showDate}
+        weatherLocation={settings.weatherLocation}
+        temperatureUnit={settings.temperatureUnit}
         focusedZone={navState.zone}
         headerIndex={navState.headerIndex}
         onSelectWallpaper={() => setActiveModal('wallpaper')}

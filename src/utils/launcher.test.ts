@@ -203,3 +203,4 @@ test('Android project generator includes all required Gradle, Manifest, Kotlin, 
   assert.ok(manifest.includes('android.intent.category.LEANBACK_LAUNCHER'));
   assert.ok(manifest.includes('android.intent.category.HOME'));
 });
+

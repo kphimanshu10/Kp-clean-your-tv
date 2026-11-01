@@ -208,6 +208,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* Weather Location & Temperature Unit Preferences */}
+              <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10">
+                <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-cyan-400" />
+                  <span>Header Weather Widget Location & Units</span>
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1.5">
+                      Preferred City / Location
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={settings.weatherLocation || ''}
+                        onChange={e => onUpdateSettings({ weatherLocation: e.target.value })}
+                        placeholder="e.g. New Delhi, Mumbai, Bengaluru"
+                        className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {['New Delhi', 'Mumbai', 'Bengaluru', 'Chennai', 'Kolkata', 'Hyderabad'].map(
+                        city => (
+                          <button
+                            key={city}
+                            type="button"
+                            onClick={() => onUpdateSettings({ weatherLocation: city })}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                              (settings.weatherLocation || 'New Delhi').toLowerCase() ===
+                              city.toLowerCase()
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {city}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1.5">
+                      Temperature Unit
+                    </label>
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ temperatureUnit: 'C' })}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          (settings.temperatureUnit || 'C') === 'C'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Celsius (°C)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ temperatureUnit: 'F' })}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          settings.temperatureUnit === 'F'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Fahrenheit (°F)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Sound Feedback */}
               <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center justify-between">
                 <div>
