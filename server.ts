@@ -323,6 +323,27 @@ async function startServer() {
     res.sendFile(path.join(__dirname, 'public', 'version.json'));
   });
 
+  // Dynamically generate and stream KP_TV_Smart_Launcher_Android_Project.zip on demand to avoid static bundle bloat
+  app.get('/KP_TV_Smart_Launcher_Android_Project.zip', async (_req, res) => {
+    try {
+      const JSZip = (await import('jszip')).default;
+      const { ANDROID_PROJECT_FILES } = await import('./src/utils/androidProjectGenerator.js');
+      const zip = new JSZip();
+      const root = zip.folder('KP_TV_Smart_Launcher_Android_Project');
+      if (root) {
+        for (const [relPath, content] of Object.entries(ANDROID_PROJECT_FILES)) {
+          root.file(relPath, content);
+        }
+      }
+      const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', 'attachment; filename="KP_TV_Smart_Launcher_Android_Project.zip"');
+      res.send(buf);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to build zip' });
+    }
+  });
+
   // Universal Mobile QR Scan Landing Page: User scans QR on TV with phone -> pastes URL -> sends to TV
   app.get('/iptv-remote/:sessionId', (req, res) => {
     const sessionId = String(req.params.sessionId || 'default').replace(/[^a-zA-Z0-9_-]/g, '');

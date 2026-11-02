@@ -6,7 +6,7 @@
   "releaseDate": "2026-11-02",
   "downloadUrl": "/kp-tv-launcher-debug.apk",
   "fileSizeBytes": 5466318,
-  "sha256": "87f63cf417961986675657e46c8e8a6f82a34bc9c19272b895f55c6781f97b4c",
+  "sha256": "1a54b165cc9cf49b1305aab61e890df0662dcfa15a3e50877b8d50417339f659",
   "minAndroidSdk": 21,
   "targetAndroidSdk": 34,
   "releaseNotes": [
@@ -16,5 +16,6 @@
     "Rebuilt IPTV Live TV section integrating Indian-IPTV-App (kananinirav/Indian-IPTV-App) stream catalog, multi-playlist manager, favorites, recently watched, and HLS.js recovery.",
     "Added VLC-Style Online Link Player supporting M3U8, MP4, WebM, playback speed (0.5x-2.0x), aspect ratio, audio/subtitle tracks, and history.",
     "Added KP TV Updates manager with SHA-256 verification and native Android PackageInstaller support."
-  ]
+  ],
+  "downloadSizeBytes": 8313880
 }
