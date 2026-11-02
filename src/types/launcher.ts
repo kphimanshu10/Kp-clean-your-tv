@@ -114,3 +114,41 @@ export interface DeviceDiagnostics {
   memoryEstimateGb: number;
   connectionType: string;
 }
+
+export interface AndroidInstalledApp {
+  label: string;
+  packageName: string;
+  activityName?: string;
+  isBanner?: boolean;
+  iconDataUrl?: string;
+}
+
+export interface AndroidWifiStatus {
+  connected: boolean;
+  ssid: string;
+  rssiDbm: number;
+  signalQuality: string;
+  linkSpeedMbps: number;
+  ipAddress: string;
+}
+
+export interface AndroidTvBridgeInterface {
+  isNativeAndroid?: () => boolean;
+  launchApp?: (packageName: string) => boolean;
+  getInstalledApps?: () => string;
+  switchHdmiInput?: (port: string) => boolean;
+  fetchCricketMatches?: (endpointUrl: string, apiKey: string) => string;
+  saveCricketConfig?: (endpointUrl: string, apiKey: string) => boolean;
+  getCricketConfig?: () => string;
+  getWifiStatus?: () => string;
+  getDeviceDiagnostics?: () => string;
+  openSystemSettings?: () => boolean;
+  openWifiSettings?: () => boolean;
+}
+
+declare global {
+  interface Window {
+    AndroidTvBridge?: AndroidTvBridgeInterface;
+  }
+}
+

@@ -1,0 +1,60 @@
+name: Build & Upload KP TV Android APK
+
+on:
+  push:
+    branches: [ main, master, audit-fix-complete ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Debug APK (JDK 17 + SDK 34)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Make gradlew executable
+        working-directory: ./android
+        run: chmod +x ./gradlew
+
+      - name: Build Debug APK
+        working-directory: ./android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kp-tv-launcher-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish APK to GitHub Releases (on tag or manual trigger)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name == 'main' && 'v1.0.0-latest' || github.ref_name }}
+          name: KP TV Smart TV Launcher (${{ github.ref_name }})
+          body: |
+            ### KP TV – Smart TV Launcher (Iconic 32" Smart TV / Cloud TV OS)
+            - **Package Name**: `com.kptv.launcher`
+            - **SDK Compatibility**: Android 5.0 (API 21) – Android 14 (API 34)
+            - **100% Ads-Free & Non-Destructive**: Preserves stock launcher, Netflix, and Prime Video.
+          files: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            releases/kp-tv-launcher-debug.apk

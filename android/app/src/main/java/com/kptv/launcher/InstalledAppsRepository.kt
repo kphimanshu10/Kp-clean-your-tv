@@ -5,28 +5,30 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
+import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 
 /**
  * Discovers real installed launchable applications on Android TV / Cloud TV OS.
  * Supports both CATEGORY_LEANBACK_LAUNCHER and standard CATEGORY_LAUNCHER.
- * Does not depend exclusively on hardcoded package names: dynamically discovers all
- * launchable activities and persists user dock customization in SharedPreferences.
  */
 class InstalledAppsRepository(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("kptv_dock_prefs", Context.MODE_PRIVATE)
 
     companion object {
-        // Preferred default priority when initialising dock if present on the TV:
-        // 1. NetMirror TV (only if already installed)
-        // 2. JioHotstar / Hotstar
-        // 3. YouTube
-        // 4. Airtel
         val PREFERRED_DOCK_PACKAGES = listOf(
-            listOf("com.netmirror.app", "com.netmirror.tv"),
+            listOf("com.netmirror.app", "com.netmirror.tv", "com.netmirror"),
             listOf("in.startv.hotstar.dplus", "in.startv.hotstar", "com.hotstar.tv"),
             listOf("com.google.android.youtube.tv", "com.google.android.youtube", "com.smarttube.tv"),
-            listOf("com.airtel.tv", "com.airtel.xstream", "tv.airtel.xstream")
+            listOf("com.airtel.tv", "com.airtel.xstream", "tv.airtel.xstream"),
+            listOf("com.netflix.ninja", "com.netflix.mediaclient"),
+            listOf("com.amazon.amazonvideo.livingroom", "com.amazon.avod.thirdpartyclient")
         )
     }
 
@@ -35,13 +37,11 @@ class InstalledAppsRepository(private val context: Context) {
         val selfPkg = context.packageName
         val discovered = linkedMapOf<String, AppEntry>()
 
-        // 1. Query Leanback TV apps first
         val leanbackIntent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
         }
         val leanbackResolved = queryIntentSafe(pm, leanbackIntent)
 
-        // 2. Query standard Launcher apps (critical for Cloud TV OS where apps use standard CATEGORY_LAUNCHER)
         val standardIntent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
@@ -89,11 +89,83 @@ class InstalledAppsRepository(private val context: Context) {
         )
     }
 
-    /**
-     * Returns up to 4 apps for the Home Screen Dock.
-     * Uses user-customized pinned apps first, then preferred apps if installed,
-     * and dynamically falls back to other installed apps on the TV so the dock is never broken.
-     */
+    fun toJsonArrayString(): String {
+        val arr = JSONArray()
+        for (app in getAllInstalledApps()) {
+            val obj = JSONObject()
+            obj.put("label", app.label)
+            obj.put("packageName", app.packageName)
+            obj.put("activityName", app.activityName ?: "")
+            val iconUrl = drawableToDataUrl(app.icon)
+            if (iconUrl != null) {
+                obj.put("iconDataUrl", iconUrl)
+            }
+            arr.put(obj)
+        }
+        return arr.toString()
+    }
+
+    private fun drawableToDataUrl(drawable: Drawable?): String? {
+        if (drawable == null) return null
+        return try {
+            val size = 64
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+            val out = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
+            val b64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+            "data:image/png;base64,$b64"
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun launchByPackageOrAlias(packageNameOrAlias: String): Boolean {
+        val trimmed = packageNameOrAlias.trim()
+        if (trimmed.isEmpty()) return false
+
+        val allApps = getAllInstalledApps()
+        val exact = allApps.firstOrNull { it.packageName.equals(trimmed, ignoreCase = true) }
+        if (exact != null && launchApp(exact)) {
+            return true
+        }
+
+        // Check known alias groups (e.g. YouTube TV vs YouTube, Hotstar TV vs Hotstar)
+        val group = PREFERRED_DOCK_PACKAGES.firstOrNull { grp ->
+            grp.any { it.equals(trimmed, ignoreCase = true) }
+        }
+        if (group != null) {
+            for (candidate in group) {
+                val found = allApps.firstOrNull { it.packageName.equals(candidate, ignoreCase = true) }
+                if (found != null && launchApp(found)) {
+                    return true
+                }
+            }
+        }
+
+        // Direct PackageManager intent fallback
+        val pm = context.packageManager
+        try {
+            val leanback = pm.getLeanbackLaunchIntentForPackage(trimmed)
+            if (leanback != null) {
+                leanback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(leanback)
+                return true
+            }
+            val standard = pm.getLaunchIntentForPackage(trimmed)
+            if (standard != null) {
+                standard.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(standard)
+                return true
+            }
+        } catch (_: Exception) {
+            return false
+        }
+        return false
+    }
+
     fun getDockApps(): List<AppEntry> {
         val all = getAllInstalledApps()
         val pinned = all.filter { it.isPinnedToDock }

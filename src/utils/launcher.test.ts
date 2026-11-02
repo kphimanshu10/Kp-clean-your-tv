@@ -224,12 +224,27 @@ test('Android project generator includes all required Gradle Wrapper, Manifest, 
   assert.equal(jarBytes[0], 0x50);
   assert.equal(jarBytes[1], 0x4b);
 
-  // Verify AndroidManifest uses <queries> instead of QUERY_ALL_PACKAGES
+  // Verify AndroidManifest uses <queries> instead of QUERY_ALL_PACKAGES and sensorLandscape orientation
   const manifest = ANDROID_PROJECT_FILES['app/src/main/AndroidManifest.xml'];
   assert.ok(!manifest.includes('QUERY_ALL_PACKAGES'));
   assert.ok(manifest.includes('<queries>'));
   assert.ok(manifest.includes('android.intent.category.LEANBACK_LAUNCHER'));
   assert.ok(manifest.includes('android.intent.category.HOME'));
+  assert.ok(manifest.includes('android:screenOrientation="sensorLandscape"'));
+  assert.ok(manifest.includes('android:hardwareAccelerated="true"'));
+
+  // Verify MainActivity hosts secure fullscreen WebView with AndroidTvBridge
+  const mainActivity = ANDROID_PROJECT_FILES['app/src/main/java/com/kptv/launcher/MainActivity.kt'];
+  assert.ok(mainActivity.includes('https://kptv.local/index.html'));
+  assert.ok(mainActivity.includes('allowFileAccess = false'));
+  assert.ok(mainActivity.includes('allowContentAccess = false'));
+  assert.ok(mainActivity.includes('textZoom = 100'));
+  assert.ok(mainActivity.includes('AndroidTvBridge'));
+
+  const layoutXml = ANDROID_PROJECT_FILES['app/src/main/res/layout/activity_main.xml'];
+  assert.ok(layoutXml.includes('android.webkit.WebView'));
+  assert.ok(layoutXml.includes('@+id/kp_tv_webview'));
 });
+
 
 

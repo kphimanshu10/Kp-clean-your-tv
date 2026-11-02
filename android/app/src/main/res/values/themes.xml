@@ -4,6 +4,7 @@
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:statusBarColor">@color/tv_navy_bg</item>
+        <item name="android:navigationBarColor">@color/tv_navy_bg</item>
         <item name="colorPrimary">@color/tv_neon_blue</item>
         <item name="colorAccent">@color/tv_neon_blue</item>
     </style>

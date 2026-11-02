@@ -213,12 +213,20 @@ export const AppDrawerModal: React.FC<AppDrawerModalProps> = ({
               >
                 {/* App Icon & Details */}
                 <div className="flex items-start space-x-3 mb-3">
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-md shrink-0"
-                    style={{ backgroundColor: app.accentColor }}
-                  >
-                    {app.name.charAt(0)}
-                  </div>
+                  {app.customIcon ? (
+                    <img
+                      src={app.customIcon}
+                      alt={app.name}
+                      className="w-12 h-12 rounded-2xl object-contain bg-slate-900 p-1 shadow-md shrink-0 border border-white/10"
+                    />
+                  ) : (
+                    <div
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-md shrink-0"
+                      style={{ backgroundColor: app.accentColor }}
+                    >
+                      {app.name.charAt(0)}
+                    </div>
+                  )}
                   <div className="overflow-hidden flex-1">
                     <h3 className="text-sm font-bold text-white truncate">{app.name}</h3>
                     <p className="text-[10px] text-slate-400 font-mono truncate">

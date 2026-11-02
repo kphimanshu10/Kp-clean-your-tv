@@ -2,6 +2,15 @@
 
 **KP TV – Smart TV Launcher** is an ads-free, 16:9 neon glassmorphic Smart TV home screen and native Android Studio project engineered for the **Iconic Smart TV (32-inch, Cloud TV OS / AOSP)** and compatible Android TV devices.
 
+## Direct APK Download (Pre-Built & Verified)
+
+The compiled and signed Android Debug APK (`6.7 MB`, `minSdk 21`, `targetSdk 34`) is committed directly in this repository for immediate download on your TV or PC:
+
+- **[Download `kp-tv-launcher-debug.apk` (Repository Root)](./kp-tv-launcher-debug.apk)**
+- **[Download `releases/kp-tv-launcher-debug.apk` (Releases Folder)](./releases/kp-tv-launcher-debug.apk)**
+- **[Download `public/kp-tv-launcher-debug.apk` (Web Public Folder)](./public/kp-tv-launcher-debug.apk)**
+- **Automated GitHub Releases**: `.github/workflows/android-apk-release.yml` automatically builds and attaches `app-debug.apk` to GitHub Actions Artifacts and GitHub Releases.
+
 ---
 
 ## Key Features

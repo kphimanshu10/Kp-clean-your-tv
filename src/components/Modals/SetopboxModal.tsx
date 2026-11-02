@@ -7,15 +7,6 @@ interface SetopboxModalProps {
   onSaveDefaultPort: (port: 'hdmi1' | 'hdmi2' | 'av') => void;
 }
 
-declare global {
-  interface Window {
-    AndroidTvBridge?: {
-      switchHdmiInput?: (port: string) => boolean;
-      launchApp?: (packageName: string) => boolean;
-      getInstalledApps?: () => string;
-    };
-  }
-}
 
 export const SetopboxModal: React.FC<SetopboxModalProps> = ({
   onClose,

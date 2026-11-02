@@ -25,6 +25,7 @@ import { DynamicWallpaper } from './components/DynamicWallpaper';
 import { INITIAL_APPS } from './data/mockData';
 import { WALLPAPER_PRESETS } from './data/wallpapers';
 import {
+  AndroidInstalledApp,
   AppShortcut,
   CricketApiConfig,
   CricketMatch,
@@ -38,7 +39,32 @@ import { soundFx } from './utils/audio';
 import { detectDeviceEnvironment } from './utils/hardwareDetection';
 import { fetchLiveCricketMatches } from './services/cricketService';
 
+const BASE_TV_WIDTH = 1280;
+const BASE_TV_HEIGHT = 720;
+
 export default function App() {
+  // Responsive 16:9 TV Viewport Scaling State
+  const [viewport, setViewport] = useState<{ width: number; height: number }>(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth || BASE_TV_WIDTH : BASE_TV_WIDTH,
+    height: typeof window !== 'undefined' ? window.innerHeight || BASE_TV_HEIGHT : BASE_TV_HEIGHT,
+  }));
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewport({
+        width: window.innerWidth || BASE_TV_WIDTH,
+        height: window.innerHeight || BASE_TV_HEIGHT,
+      });
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    window.addEventListener('orientationchange', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      window.removeEventListener('orientationchange', updateViewport);
+    };
+  }, []);
+
   // Screen & Navigation States
   const [currentScreen, setCurrentScreen] = useState<ScreenView>('home');
   const [navState, setNavState] = useState<SpatialNavState>({
@@ -58,6 +84,68 @@ export default function App() {
       return INITIAL_APPS;
     }
   });
+
+  // Sync Real Installed Android Apps into the App Drawer when running in the Android APK
+  // while preserving the exact signature Home Dock layout (NetMirror, JioHotstar, YouTube, Airtel, + More)
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.AndroidTvBridge?.getInstalledApps) {
+        const rawJson = window.AndroidTvBridge.getInstalledApps();
+        const nativeApps = JSON.parse(rawJson) as AndroidInstalledApp[];
+        if (Array.isArray(nativeApps) && nativeApps.length > 0) {
+          setApps(prev => {
+            const existingPackages = new Set(prev.map(a => a.packageName.toLowerCase()));
+            const updated = prev.map(item => {
+              const match = nativeApps.find(
+                na =>
+                  na.packageName.toLowerCase() === item.packageName.toLowerCase() ||
+                  (item.id === 'youtube' && na.packageName.toLowerCase().includes('youtube')) ||
+                  (item.id === 'hotstar' && na.packageName.toLowerCase().includes('hotstar')) ||
+                  (item.id === 'netmirror' && na.packageName.toLowerCase().includes('netmirror')) ||
+                  (item.id === 'airtel' && na.packageName.toLowerCase().includes('airtel')) ||
+                  (item.id === 'netflix' && na.packageName.toLowerCase().includes('netflix')) ||
+                  (item.id === 'prime' &&
+                    (na.packageName.toLowerCase().includes('amazonvideo') ||
+                      na.packageName.toLowerCase().includes('avod')))
+              );
+              if (match) {
+                existingPackages.add(match.packageName.toLowerCase());
+                return {
+                  ...item,
+                  packageName: match.packageName,
+                  customIcon: match.iconDataUrl || item.customIcon,
+                  isInstalled: true,
+                };
+              }
+              return item;
+            });
+
+            const extraNativeApps: AppShortcut[] = nativeApps
+              .filter(na => !existingPackages.has(na.packageName.toLowerCase()))
+              .map((na, idx) => ({
+                id: `android-${na.packageName}`,
+                name: na.label || na.packageName,
+                packageName: na.packageName,
+                activityName: na.activityName,
+                iconType: 'custom' as const,
+                customIcon: na.iconDataUrl,
+                category: 'utility' as const,
+                inDock: false,
+                dockOrder: 100 + idx,
+                isPreinstalled: true,
+                isTrusted: true,
+                isInstalled: true,
+                accentColor: '#0284c7',
+              }));
+
+            return [...updated, ...extraNativeApps];
+          });
+        }
+      }
+    } catch {
+      // ignore bridge parse errors
+    }
+  }, []);
 
   // Live Cricket Score State (No hardcoded demo scores)
   const [cricketStatus, setCricketStatus] = useState<CricketServiceStatus>('unconfigured');
@@ -176,6 +264,20 @@ export default function App() {
     ? 'custom-image'
     : 'default-mountain';
 
+  // Helper to launch an app via AndroidTvBridge or fallback modal
+  const triggerAppLaunch = useCallback((app: AppShortcut) => {
+    soundFx.playSelect();
+    if (
+      typeof window !== 'undefined' &&
+      window.AndroidTvBridge &&
+      typeof window.AndroidTvBridge.launchApp === 'function'
+    ) {
+      const launched = window.AndroidTvBridge.launchApp(app.packageName);
+      if (launched) return;
+    }
+    setLaunchedApp(app);
+  }, []);
+
   // D-Pad Remote Direction Handler
   const handleDpadMove = useCallback(
     (direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
@@ -203,7 +305,7 @@ export default function App() {
       else if (navState.cardIndex === 2) setActiveModal('cricket');
     } else if (navState.zone === 'dock') {
       if (navState.dockIndex < dockApps.length) {
-        setLaunchedApp(dockApps[navState.dockIndex]);
+        triggerAppLaunch(dockApps[navState.dockIndex]);
       } else {
         setActiveModal('apps');
       }
@@ -220,7 +322,7 @@ export default function App() {
       else if (navState.headerIndex === 2) setActiveModal('settings');
       else if (navState.headerIndex === 3) setActiveModal('notifications');
     }
-  }, [navState, activeModal, launchedApp, dockApps]);
+  }, [navState, activeModal, launchedApp, dockApps, triggerAppLaunch]);
 
   // Back Button Action Handler
   const handleRemoteBack = useCallback(() => {
@@ -359,207 +461,216 @@ export default function App() {
     setApps(prev => prev.filter(app => app.isPreinstalled || app.id !== appId));
   };
 
+  // Compute proportional 16:9 landscape TV stage dimensions so 1280x720, 1366x768, 1920x1080,
+  // and high-DPI Android WebView viewports render with identical proportions to IMAGE 1
+  const scale =
+    viewport.width < viewport.height
+      ? viewport.width / BASE_TV_WIDTH
+      : Math.min(viewport.width / BASE_TV_WIDTH, viewport.height / BASE_TV_HEIGHT);
+  const stageWidth = Math.max(BASE_TV_WIDTH, Math.round(viewport.width / scale));
+  const stageHeight = Math.max(BASE_TV_HEIGHT, Math.round(viewport.height / scale));
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden flex flex-col justify-between bg-[#030712] select-none">
-      {/* High-Performance Hardware-Accelerated Dynamic Wallpaper */}
-      <DynamicWallpaper
-        renderMode={activeRenderMode}
-        customImageUrl={settings.customWallpaperUrl}
-      />
+    <div className="relative w-screen h-screen overflow-hidden bg-[#030712] select-none">
+      <div
+        style={{
+          width: `${stageWidth}px`,
+          height: `${stageHeight}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+        }}
+        className="relative overflow-hidden flex flex-col justify-between bg-[#030712] select-none"
+      >
+        {/* High-Performance Hardware-Accelerated Dynamic Wallpaper */}
+        <DynamicWallpaper
+          renderMode={activeRenderMode}
+          customImageUrl={settings.customWallpaperUrl}
+        />
 
-      {/* Top Header */}
-      <Header
-        clockFormat={settings.clockFormat}
-        showDate={settings.showDate}
-        weatherLocation={settings.weatherLocation}
-        temperatureUnit={settings.temperatureUnit}
-        focusedZone={navState.zone}
-        headerIndex={navState.headerIndex}
-        onSelectWallpaper={() => setActiveModal('wallpaper')}
-        onSelectWifi={() => setActiveModal('wifi')}
-        onSelectSettings={() => setActiveModal('settings')}
-        onSelectNotifications={() => setActiveModal('notifications')}
-      />
+        {/* Top Header */}
+        <Header
+          clockFormat={settings.clockFormat}
+          showDate={settings.showDate}
+          weatherLocation={settings.weatherLocation}
+          temperatureUnit={settings.temperatureUnit}
+          focusedZone={navState.zone}
+          headerIndex={navState.headerIndex}
+          onSelectWallpaper={() => setActiveModal('wallpaper')}
+          onSelectWifi={() => setActiveModal('wifi')}
+          onSelectSettings={() => setActiveModal('settings')}
+          onSelectNotifications={() => setActiveModal('notifications')}
+        />
 
-      {/* Main Body: Left Sidebar + 3 Hero Cards */}
-      <div className="relative z-10 flex-1 flex items-center px-8 space-x-6 overflow-hidden">
-        {/* Vertical Navigation Sidebar */}
-        <Sidebar
-          currentScreen={currentScreen}
-          isFocusedZone={navState.zone === 'sidebar'}
-          focusedIndex={navState.sidebarIndex}
-          onSelectScreen={screen => {
+        {/* Main Body: Left Sidebar + 3 Hero Cards */}
+        <div className="relative z-10 flex-1 flex items-center px-8 space-x-6 overflow-hidden">
+          {/* Vertical Navigation Sidebar */}
+          <Sidebar
+            currentScreen={currentScreen}
+            isFocusedZone={navState.zone === 'sidebar'}
+            focusedIndex={navState.sidebarIndex}
+            onSelectScreen={screen => {
+              soundFx.playSelect();
+              setCurrentScreen(screen);
+              if (screen === 'apps') setActiveModal('apps');
+              if (screen === 'settings') setActiveModal('settings');
+              if (screen === 'about') setActiveModal('about');
+            }}
+          />
+
+          {/* 3 Main Hero Cards in 16:9 TV landscape row */}
+          <main className="flex-1 flex items-center space-x-6 py-2 overflow-hidden">
+            {/* Card 1: Live TV */}
+            <LiveTvCard
+              isFocused={navState.zone === 'cards' && navState.cardIndex === 0}
+              onSelect={() => {
+                soundFx.playSelect();
+                setActiveModal('livetv');
+              }}
+            />
+
+            {/* Card 2: Setopbox */}
+            <SetopboxCard
+              isFocused={navState.zone === 'cards' && navState.cardIndex === 1}
+              onSelect={() => {
+                soundFx.playSelect();
+                setActiveModal('setopbox');
+              }}
+            />
+
+            {/* Card 3: Live Cricket Score */}
+            <CricketScoreCard
+              match={activeCricketMatch}
+              serviceStatus={cricketStatus}
+              errorMessage={cricketError}
+              lastUpdated={cricketLastUpdated}
+              isFocused={navState.zone === 'cards' && navState.cardIndex === 2}
+              onSelect={() => {
+                soundFx.playSelect();
+                setActiveModal('cricket');
+              }}
+            />
+          </main>
+        </div>
+
+        {/* Bottom Application Dock */}
+        <BottomDock
+          dockApps={dockApps}
+          focusedIndex={navState.dockIndex}
+          isFocusedZone={navState.zone === 'dock'}
+          onLaunchApp={triggerAppLaunch}
+          onOpenMoreApps={() => {
             soundFx.playSelect();
-            setCurrentScreen(screen);
-            if (screen === 'apps') setActiveModal('apps');
-            if (screen === 'settings') setActiveModal('settings');
-            if (screen === 'about') setActiveModal('about');
+            setActiveModal('apps');
           }}
         />
 
-        {/* 3 Main Hero Cards in 16:9 TV landscape row */}
-        <main className="flex-1 flex items-center space-x-6 py-2 overflow-hidden">
-          {/* Card 1: Live TV */}
-          <LiveTvCard
-            isFocused={navState.zone === 'cards' && navState.cardIndex === 0}
-            onSelect={() => {
-              soundFx.playSelect();
-              setActiveModal('livetv');
-            }}
-          />
+        {/* Virtual TV Remote HUD for testing on desktop / touch */}
+        <VirtualTvRemote
+          onDpad={handleDpadMove}
+          onEnter={handleRemoteEnter}
+          onBack={handleRemoteBack}
+          onHome={handleRemoteHome}
+          soundEnabled={settings.soundEffects}
+          onToggleSound={() => setSettings(s => ({ ...s, soundEffects: !s.soundEffects }))}
+        />
 
-          {/* Card 2: Setopbox */}
-          <SetopboxCard
-            isFocused={navState.zone === 'cards' && navState.cardIndex === 1}
-            onSelect={() => {
-              soundFx.playSelect();
-              setActiveModal('setopbox');
-            }}
-          />
+        {/* Modals & Screens */}
+        {activeModal === 'livetv' && <LiveTvModal onClose={() => setActiveModal('none')} />}
 
-          {/* Card 3: Live Cricket Score */}
-          <CricketScoreCard
-            match={activeCricketMatch}
+        {activeModal === 'setopbox' && (
+          <SetopboxModal
+            defaultPort={settings.defaultSetopboxPort}
+            onSaveDefaultPort={port => setSettings(s => ({ ...s, defaultSetopboxPort: port }))}
+            onClose={() => setActiveModal('none')}
+          />
+        )}
+
+        {activeModal === 'cricket' && (
+          <CricketScoreModal
+            matches={cricketMatches}
+            currentMatch={activeCricketMatch}
             serviceStatus={cricketStatus}
             errorMessage={cricketError}
             lastUpdated={cricketLastUpdated}
-            isFocused={navState.zone === 'cards' && navState.cardIndex === 2}
-            onSelect={() => {
-              soundFx.playSelect();
-              setActiveModal('cricket');
+            onSelectMatch={m => setActiveCricketMatch(m)}
+            onRefresh={refreshCricketScores}
+            onClose={() => setActiveModal('none')}
+          />
+        )}
+
+        {activeModal === 'apps' && (
+          <AppDrawerModal
+            allApps={apps}
+            onClose={() => {
+              setActiveModal('none');
+              setCurrentScreen('home');
+            }}
+            onLaunchApp={app => {
+              setActiveModal('none');
+              setCurrentScreen('home');
+              triggerAppLaunch(app);
+            }}
+            onToggleDockPin={handleToggleDockPin}
+            onAddCustomShortcut={handleAddCustomShortcut}
+            onRemoveShortcut={handleRemoveShortcut}
+          />
+        )}
+
+        {activeModal === 'settings' && (
+          <SettingsModal
+            settings={settings}
+            diagnostics={diagnostics}
+            onUpdateSettings={newS => setSettings(s => ({ ...s, ...newS }))}
+            onOpenWallpaperStudio={() => setActiveModal('wallpaper')}
+            onClose={() => {
+              setActiveModal('none');
+              setCurrentScreen('home');
             }}
           />
-        </main>
+        )}
+
+        {activeModal === 'wallpaper' && (
+          <WallpaperModal
+            currentPresetId={settings.wallpaperPreset}
+            customImageUrl={settings.customWallpaperUrl}
+            onSelectPreset={presetId => setSettings(s => ({ ...s, wallpaperPreset: presetId }))}
+            onSetCustomImage={dataUrl =>
+              setSettings(s => ({
+                ...s,
+                wallpaperPreset: 'custom-image',
+                customWallpaperUrl: dataUrl,
+              }))
+            }
+            onResetToDefault={() =>
+              setSettings(s => ({
+                ...s,
+                wallpaperPreset: 'reference-mountain',
+                customWallpaperUrl: '',
+              }))
+            }
+            onClose={() => setActiveModal('none')}
+          />
+        )}
+
+        {activeModal === 'about' && (
+          <AboutModal
+            onClose={() => {
+              setActiveModal('none');
+              setCurrentScreen('home');
+            }}
+          />
+        )}
+
+        {activeModal === 'wifi' && <WifiModal onClose={() => setActiveModal('none')} />}
+
+        {activeModal === 'notifications' && (
+          <NotificationsModal onClose={() => setActiveModal('none')} />
+        )}
+
+        {/* App Launch Confirmation Modal */}
+        {launchedApp && <AppLaunchModal app={launchedApp} onClose={() => setLaunchedApp(null)} />}
       </div>
-
-      {/* Bottom Application Dock */}
-      <BottomDock
-        dockApps={dockApps}
-        focusedIndex={navState.dockIndex}
-        isFocusedZone={navState.zone === 'dock'}
-        onLaunchApp={app => {
-          soundFx.playSelect();
-          if (
-            typeof window !== 'undefined' &&
-            window.AndroidTvBridge &&
-            typeof window.AndroidTvBridge.launchApp === 'function'
-          ) {
-            const launched = window.AndroidTvBridge.launchApp(app.packageName);
-            if (launched) return;
-          }
-          setLaunchedApp(app);
-        }}
-        onOpenMoreApps={() => {
-          soundFx.playSelect();
-          setActiveModal('apps');
-        }}
-      />
-
-      {/* Virtual TV Remote HUD for testing on desktop / touch */}
-      <VirtualTvRemote
-        onDpad={handleDpadMove}
-        onEnter={handleRemoteEnter}
-        onBack={handleRemoteBack}
-        onHome={handleRemoteHome}
-        soundEnabled={settings.soundEffects}
-        onToggleSound={() => setSettings(s => ({ ...s, soundEffects: !s.soundEffects }))}
-      />
-
-      {/* Modals & Screens */}
-      {activeModal === 'livetv' && <LiveTvModal onClose={() => setActiveModal('none')} />}
-
-      {activeModal === 'setopbox' && (
-        <SetopboxModal
-          defaultPort={settings.defaultSetopboxPort}
-          onSaveDefaultPort={port => setSettings(s => ({ ...s, defaultSetopboxPort: port }))}
-          onClose={() => setActiveModal('none')}
-        />
-      )}
-
-      {activeModal === 'cricket' && (
-        <CricketScoreModal
-          matches={cricketMatches}
-          currentMatch={activeCricketMatch}
-          serviceStatus={cricketStatus}
-          errorMessage={cricketError}
-          lastUpdated={cricketLastUpdated}
-          onSelectMatch={m => setActiveCricketMatch(m)}
-          onRefresh={refreshCricketScores}
-          onClose={() => setActiveModal('none')}
-        />
-      )}
-
-      {activeModal === 'apps' && (
-        <AppDrawerModal
-          allApps={apps}
-          onClose={() => {
-            setActiveModal('none');
-            setCurrentScreen('home');
-          }}
-          onLaunchApp={app => {
-            setActiveModal('none');
-            setCurrentScreen('home');
-            setLaunchedApp(app);
-          }}
-          onToggleDockPin={handleToggleDockPin}
-          onAddCustomShortcut={handleAddCustomShortcut}
-          onRemoveShortcut={handleRemoveShortcut}
-        />
-      )}
-
-      {activeModal === 'settings' && (
-        <SettingsModal
-          settings={settings}
-          diagnostics={diagnostics}
-          onUpdateSettings={newS => setSettings(s => ({ ...s, ...newS }))}
-          onOpenWallpaperStudio={() => setActiveModal('wallpaper')}
-          onClose={() => {
-            setActiveModal('none');
-            setCurrentScreen('home');
-          }}
-        />
-      )}
-
-      {activeModal === 'wallpaper' && (
-        <WallpaperModal
-          currentPresetId={settings.wallpaperPreset}
-          customImageUrl={settings.customWallpaperUrl}
-          onSelectPreset={presetId => setSettings(s => ({ ...s, wallpaperPreset: presetId }))}
-          onSetCustomImage={dataUrl =>
-            setSettings(s => ({
-              ...s,
-              wallpaperPreset: 'custom-image',
-              customWallpaperUrl: dataUrl,
-            }))
-          }
-          onResetToDefault={() =>
-            setSettings(s => ({
-              ...s,
-              wallpaperPreset: 'reference-mountain',
-              customWallpaperUrl: '',
-            }))
-          }
-          onClose={() => setActiveModal('none')}
-        />
-      )}
-
-      {activeModal === 'about' && (
-        <AboutModal
-          onClose={() => {
-            setActiveModal('none');
-            setCurrentScreen('home');
-          }}
-        />
-      )}
-
-      {activeModal === 'wifi' && <WifiModal onClose={() => setActiveModal('none')} />}
-
-      {activeModal === 'notifications' && (
-        <NotificationsModal onClose={() => setActiveModal('none')} />
-      )}
-
-      {/* App Launch Confirmation Modal */}
-      {launchedApp && <AppLaunchModal app={launchedApp} onClose={() => setLaunchedApp(null)} />}
     </div>
   );
 }
+

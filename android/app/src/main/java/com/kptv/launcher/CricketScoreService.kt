@@ -17,7 +17,7 @@ import java.util.Date
 import java.util.Locale
 
 data class CricketScoreState(
-    val status: String, // "unconfigured", "loading", "live", "error", "offline"
+    val status: String,
     val matchTitle: String,
     val matchSubtitle: String,
     val team1Code: String,
@@ -30,10 +30,6 @@ data class CricketScoreState(
     val lastUpdated: String
 )
 
-/**
- * Legitimate Live Cricket Score Service.
- * Handles unconfigured, offline, timeout, invalid response, quota, and authentication errors.
- */
 class CricketScoreService(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("kptv_cricket_prefs", Context.MODE_PRIVATE)
@@ -48,6 +44,13 @@ class CricketScoreService(private val context: Context) {
             .putString("cricket_api_url", apiUrl.trim())
             .putString("cricket_api_key", apiKey.trim())
             .apply()
+    }
+
+    fun getConfigJson(): String {
+        val obj = JSONObject()
+        obj.put("endpointUrl", getApiUrl())
+        obj.put("apiKey", getApiKey())
+        return obj.toString()
     }
 
     suspend fun fetchLiveScore(): CricketScoreState = withContext(Dispatchers.IO) {

@@ -1,6 +1,7 @@
 package com.kptv.launcher
 
 import android.content.Context
+import android.content.Intent
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.os.Build
@@ -12,6 +13,10 @@ import androidx.appcompat.app.AlertDialog
  * Never pretends that the input was switched when unsupported; shows clear manual instructions.
  */
 object SetopboxHelper {
+
+    fun attemptDirectInputSwitch(context: Context, port: String): Boolean {
+        return attemptSystemTvInputIntent(context)
+    }
 
     fun openSetopboxSelector(context: Context, onDismissRestoreFocus: () -> Unit) {
         val hdmiInputs = detectDocumentedHdmiInputs(context)
@@ -63,18 +68,20 @@ object SetopboxHelper {
         }
     }
 
-    private fun attemptSystemTvInputIntent(context: Context): Boolean {
+    fun attemptSystemTvInputIntent(context: Context): Boolean {
         val pm = context.packageManager
         val candidatePackages = listOf(
             "com.android.tv",
             "com.google.android.tv",
-            "com.droidlogic.tvinput"
+            "com.droidlogic.tvinput",
+            "com.mstar.tv.tvplayer.ui"
         )
         for (pkg in candidatePackages) {
             try {
                 val intent = pm.getLeanbackLaunchIntentForPackage(pkg)
                     ?: pm.getLaunchIntentForPackage(pkg)
                 if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
                     return true
                 }

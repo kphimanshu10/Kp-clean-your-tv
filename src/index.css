@@ -1,13 +1,27 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #030712;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
   }
 }
 
 .font-rajdhani {
-  font-family: 'Rajdhani', sans-serif;
+  font-family: 'Rajdhani', system-ui, -apple-system, sans-serif;
 }
 
 /* Custom TV glow and glassmorphism effects */
@@ -35,3 +49,4 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
