@@ -6,7 +6,7 @@
   "releaseDate": "2026-11-02",
   "downloadUrl": "/kp-tv-launcher-debug.apk",
   "fileSizeBytes": 5466318,
-  "sha256": "1a54b165cc9cf49b1305aab61e890df0662dcfa15a3e50877b8d50417339f659",
+  "sha256": "a38766228b8606c65a3ee190e92e119fc076c2a3eaa00125e0c239552d8882c9",
   "minAndroidSdk": 21,
   "targetAndroidSdk": 34,
   "releaseNotes": [
@@ -17,5 +17,5 @@
     "Added VLC-Style Online Link Player supporting M3U8, MP4, WebM, playback speed (0.5x-2.0x), aspect ratio, audio/subtitle tracks, and history.",
     "Added KP TV Updates manager with SHA-256 verification and native Android PackageInstaller support."
   ],
-  "downloadSizeBytes": 8313880
+  "downloadSizeBytes": 7558256
 }

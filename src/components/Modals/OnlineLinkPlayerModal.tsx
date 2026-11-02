@@ -10,6 +10,7 @@ import {
   Play,
   Sparkles,
   CheckCircle2,
+  Maximize2,
 } from 'lucide-react';
 import { VideoStreamPlayer } from '../VideoStreamPlayer';
 import { UniversalQrUrlModal, validateHttpUrl } from './UniversalQrUrlModal';
@@ -71,6 +72,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
   const [listFilter, setListFilter] = useState<'all' | 'favorites'>('all');
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
   const [statusNote, setStatusNote] = useState<string | null>(null);
+  const [fullscreenTrigger, setFullscreenTrigger] = useState<number>(0);
 
   useEffect(() => {
     try {
@@ -80,7 +82,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
     }
   }, [historyItems]);
 
-  const recordAndPlayUrl = (rawUrl: string) => {
+  const recordAndPlayUrl = (rawUrl: string, openInFullscreen = false) => {
     const check = validateHttpUrl(rawUrl);
     if (!check.valid) {
       setStatusNote(check.error || 'Please enter a valid HTTP/HTTPS stream URL.');
@@ -103,6 +105,9 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
     setActiveTitle(guessedTitle);
     setUrlInput(clean);
     setStatusNote(`Playing ${format}: ${guessedTitle}`);
+    if (openInFullscreen) {
+      setFullscreenTrigger(n => n + 1);
+    }
 
     setHistoryItems(prev => {
       const existing = prev.find(i => i.url === clean);
@@ -205,6 +210,21 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Play Stream</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (urlInput.trim()) {
+                  recordAndPlayUrl(urlInput, true);
+                } else if (activeStreamUrl) {
+                  setFullscreenTrigger(n => n + 1);
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 focus:ring-2 focus:ring-cyan-300 text-white text-xs font-extrabold flex items-center space-x-1.5 shrink-0 shadow-[0_0_15px_rgba(6,182,212,0.4)] cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Full Screen Play</span>
+            </button>
           </form>
 
           <button
@@ -234,6 +254,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                 title={activeTitle}
                 subtitle={activeStreamUrl}
                 isLive={activeStreamUrl.toLowerCase().includes('.m3u8')}
+                forceFullscreenTrigger={fullscreenTrigger}
                 className="flex-1 w-full"
               />
             ) : (
@@ -342,6 +363,16 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                       </button>
 
                       <div className="flex items-center space-x-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => recordAndPlayUrl(item.url, true)}
+                          title="Full Screen Play"
+                          aria-label={`Play ${item.title} in Full Screen`}
+                          className="px-2 py-1 rounded-lg bg-cyan-600/25 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 text-[10px] font-extrabold flex items-center space-x-1 transition-colors cursor-pointer"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                          <span>Full Screen</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => toggleFavorite(item.id)}

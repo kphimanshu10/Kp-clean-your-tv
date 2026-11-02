@@ -440,6 +440,13 @@ export default function App() {
 
   // Back Button Action Handler
   const handleRemoteBack = useCallback(() => {
+    if (
+      typeof document !== 'undefined' &&
+      (document.fullscreenElement ||
+        document.querySelector('[data-kptv-fullscreen="true"]'))
+    ) {
+      return;
+    }
     soundFx.playBack();
     if (activeModal !== 'none') {
       setActiveModal('none');

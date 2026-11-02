@@ -38,6 +38,8 @@ interface VideoStreamPlayerProps {
   isLive?: boolean;
   onPrevChannel?: () => void;
   onNextChannel?: () => void;
+  forceFullscreenTrigger?: number;
+  onFullscreenChange?: (isFullscreen: boolean) => void;
   className?: string;
 }
 
@@ -48,11 +50,14 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
   isLive = true,
   onPrevChannel,
   onNextChannel,
+  forceFullscreenTrigger = 0,
+  onFullscreenChange,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const osdTimerRef = useRef<number | null>(null);
 
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -62,6 +67,7 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
   const [aspectRatio, setAspectRatio] = useState<VideoAspectRatio>('16:9');
   const [playbackRate, setPlaybackRate] = useState<number>(1.0);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [showOsd, setShowOsd] = useState<boolean>(true);
 
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
@@ -74,6 +80,29 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
   const [selectedSubtitleTrack, setSelectedSubtitleTrack] = useState<number>(-1);
 
   const [reloadNonce, setReloadNonce] = useState<number>(0);
+
+  // Wake OSD controls and auto-hide after 3.5s when in fullscreen mode
+  const wakeOsd = useCallback(() => {
+    setShowOsd(true);
+    if (osdTimerRef.current) {
+      window.clearTimeout(osdTimerRef.current);
+      osdTimerRef.current = null;
+    }
+    if (isFullscreen && isPlaying && !playbackError) {
+      osdTimerRef.current = window.setTimeout(() => {
+        setShowOsd(false);
+      }, 3500);
+    }
+  }, [isFullscreen, isPlaying, playbackError]);
+
+  useEffect(() => {
+    wakeOsd();
+    return () => {
+      if (osdTimerRef.current) {
+        window.clearTimeout(osdTimerRef.current);
+      }
+    };
+  }, [isFullscreen, isPlaying, playbackError, wakeOsd]);
 
   const cleanupHls = useCallback(() => {
     if (hlsRef.current) {
@@ -195,6 +224,128 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
     return () => cleanupHls();
   }, [initPlayback, reloadNonce, cleanupHls]);
 
+  // Enter Fullscreen (works in both browser native Fullscreen API AND iframe/WebView fixed 100vwx100vh cinema mode)
+  const enterFullscreen = useCallback(() => {
+    setIsFullscreen(true);
+    setShowOsd(true);
+    onFullscreenChange?.(true);
+
+    const el = containerRef.current as (HTMLDivElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+    }) | null;
+    if (el && !document.fullscreenElement) {
+      try {
+        if (typeof el.requestFullscreen === 'function') {
+          el.requestFullscreen().catch(() => {
+            // Fallback to CSS fixed inset-0 cinema fullscreen when blocked by iframe/WebView permissions
+          });
+        } else if (typeof el.webkitRequestFullscreen === 'function') {
+          el.webkitRequestFullscreen();
+        }
+      } catch {
+        // Ignore native API error; CSS fullscreen is already active
+      }
+    }
+  }, [onFullscreenChange]);
+
+  // Exit Fullscreen
+  const exitFullscreen = useCallback(() => {
+    setIsFullscreen(false);
+    setShowOsd(true);
+    onFullscreenChange?.(false);
+
+    const doc = document as Document & {
+      webkitExitFullscreen?: () => Promise<void>;
+    };
+    if (document.fullscreenElement) {
+      try {
+        if (typeof document.exitFullscreen === 'function') {
+          document.exitFullscreen().catch(() => {});
+        } else if (typeof doc.webkitExitFullscreen === 'function') {
+          doc.webkitExitFullscreen();
+        }
+      } catch {
+        // Ignore
+      }
+    }
+  }, [onFullscreenChange]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (isFullscreen) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }, [isFullscreen, enterFullscreen, exitFullscreen]);
+
+  // Trigger fullscreen when parent increments forceFullscreenTrigger
+  useEffect(() => {
+    if (forceFullscreenTrigger > 0) {
+      enterFullscreen();
+    }
+  }, [forceFullscreenTrigger, enterFullscreen]);
+
+  // Sync when user exits native browser fullscreen via Esc
+  useEffect(() => {
+    const handleNativeFullscreenChange = () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        // Keep state in sync if native fullscreen exited
+        setIsFullscreen(false);
+        setShowOsd(true);
+        onFullscreenChange?.(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleNativeFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleNativeFullscreenChange);
+    };
+  }, [isFullscreen, onFullscreenChange]);
+
+  // Keyboard & TV Remote shortcuts for Fullscreen (F key, Escape/Back to exit fullscreen, Channel Up/Down)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+
+      if (isInput) return;
+
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFullscreen();
+        return;
+      }
+
+      if (isFullscreen) {
+        wakeOsd();
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          e.preventDefault();
+          e.stopPropagation();
+          exitFullscreen();
+          return;
+        }
+        if ((e.key === 'ChannelUp' || e.key === 'PageUp') && onNextChannel) {
+          e.preventDefault();
+          onNextChannel();
+          return;
+        }
+        if ((e.key === 'ChannelDown' || e.key === 'PageDown') && onPrevChannel) {
+          e.preventDefault();
+          onPrevChannel();
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isFullscreen, toggleFullscreen, exitFullscreen, wakeOsd, onNextChannel, onPrevChannel]);
+
   const togglePlayPause = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -244,21 +395,6 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
     setAspectRatio(next);
   };
 
-  const toggleFullscreen = () => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.()
-        .then(() => setIsFullscreen(true))
-        .catch(() => setIsFullscreen(false));
-    } else {
-      document
-        .exitFullscreen?.()
-        .then(() => setIsFullscreen(false))
-        .catch(() => {});
-    }
-  };
-
   const handleSelectAudioTrack = (trackId: number) => {
     if (hlsRef.current) {
       hlsRef.current.audioTrack = trackId;
@@ -293,13 +429,30 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
       ? 'object-contain w-full h-full'
       : 'object-contain w-full h-full';
 
+  const osdVisible = !isFullscreen || showOsd || !isPlaying || Boolean(playbackError);
+
   return (
     <div
       ref={containerRef}
-      className={`relative bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col justify-between select-none ${className}`}
+      data-kptv-fullscreen={isFullscreen ? 'true' : 'false'}
+      onMouseMove={wakeOsd}
+      onTouchStart={wakeOsd}
+      className={
+        isFullscreen
+          ? 'fixed inset-0 z-[150] w-screen h-screen bg-black flex flex-col justify-between select-none overflow-hidden'
+          : `relative bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col justify-between select-none ${className}`
+      }
     >
       {/* Video Surface */}
-      <div className="relative flex-1 w-full h-full min-h-[240px] flex items-center justify-center bg-black overflow-hidden">
+      <div
+        onDoubleClick={toggleFullscreen}
+        onClick={() => {
+          if (isFullscreen) {
+            setShowOsd(prev => !prev);
+          }
+        }}
+        className="relative flex-1 w-full h-full min-h-[240px] flex items-center justify-center bg-black overflow-hidden"
+      >
         <video
           ref={videoRef}
           className={videoObjectFitClass}
@@ -332,9 +485,13 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
           }}
         />
 
-        {/* Top Overlay: Channel / Stream Info & Decoder Badge */}
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-          <div className="bg-slate-950/85 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 flex items-center space-x-2.5 max-w-[70%]">
+        {/* Top Overlay: Channel / Stream Info, Decoder Badge & Quick Full Screen Button */}
+        <div
+          className={`absolute top-3 left-3 right-3 flex items-center justify-between transition-opacity duration-300 z-10 ${
+            osdVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          <div className="bg-slate-950/85 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 flex items-center space-x-2.5 max-w-[62%] pointer-events-auto">
             <span
               className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                 playbackError
@@ -352,13 +509,38 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-1.5">
+          <div className="flex items-center space-x-1.5 pointer-events-auto">
             <span className="px-2 py-1 rounded-lg bg-slate-950/85 border border-cyan-500/30 text-[10px] font-bold text-cyan-300">
               {resolutionLabel}
             </span>
             <span className="px-2 py-1 rounded-lg bg-slate-950/85 border border-white/10 text-[10px] font-bold text-slate-300 hidden sm:inline-block">
               {decoderEngine}
             </span>
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                toggleFullscreen();
+              }}
+              title={isFullscreen ? 'Exit Full Screen (Esc / F)' : 'Full Screen Play (F)'}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 border transition-all cursor-pointer shadow-lg ${
+                isFullscreen
+                  ? 'bg-rose-600/90 hover:bg-rose-500 border-rose-400 text-white'
+                  : 'bg-cyan-600/90 hover:bg-cyan-500 border-cyan-300/60 text-white'
+              }`}
+            >
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span>Exit Full Screen</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span>Full Screen</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -378,10 +560,13 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
             <AlertTriangle className="w-10 h-10 text-amber-400 mb-2" />
             <h4 className="text-sm font-black text-white mb-1">Stream Playback Issue</h4>
             <p className="text-xs text-slate-300 max-w-md mb-4">{playbackError}</p>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={() => setReloadNonce(n => n + 1)}
+                onClick={e => {
+                  e.stopPropagation();
+                  setReloadNonce(n => n + 1);
+                }}
                 className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 focus:ring-4 focus:ring-cyan-300 text-white text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -390,11 +575,27 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
               {onNextChannel && (
                 <button
                   type="button"
-                  onClick={onNextChannel}
+                  onClick={e => {
+                    e.stopPropagation();
+                    onNextChannel();
+                  }}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 focus:ring-4 focus:ring-cyan-400 text-slate-200 text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
                 >
                   <SkipForward className="w-3.5 h-3.5" />
                   <span>Try Next Channel</span>
+                </button>
+              )}
+              {isFullscreen && (
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    exitFullscreen();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer"
+                >
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span>Exit Full Screen</span>
                 </button>
               )}
             </div>
@@ -403,7 +604,15 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
       </div>
 
       {/* Bottom Remote-Friendly Player Controls Bar */}
-      <div className="bg-slate-950/95 border-t border-white/10 px-3.5 py-2.5 space-y-2">
+      <div
+        className={`bg-slate-950/95 border-t border-white/10 px-3.5 py-2.5 space-y-2 transition-opacity duration-300 ${
+          isFullscreen
+            ? osdVisible
+              ? 'opacity-100'
+              : 'opacity-0 pointer-events-none'
+            : 'opacity-100'
+        }`}
+      >
         {/* Seek Bar (shown for VOD or seekable HLS streams) */}
         {!isLive && duration > 0 && (
           <div className="flex items-center space-x-2.5 text-[11px] text-slate-300 font-mono">
@@ -489,7 +698,7 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
             />
           </div>
 
-          {/* Right: Speed, Audio Track, Subtitles, Aspect Ratio, Fullscreen */}
+          {/* Right: Speed, Audio Track, Subtitles, Aspect Ratio, Fullscreen Play */}
           <div className="flex items-center flex-wrap gap-1.5">
             {/* Speed Selector */}
             <div className="flex items-center bg-slate-900 border border-white/10 rounded-xl px-2 py-1 text-[11px] text-slate-200">
@@ -560,17 +769,27 @@ export const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
               <span className="uppercase">{aspectRatio}</span>
             </button>
 
-            {/* Fullscreen Toggle */}
+            {/* Full Screen Play / Exit Full Screen Toggle */}
             <button
               type="button"
               onClick={toggleFullscreen}
-              title="Toggle Fullscreen"
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 focus:ring-2 focus:ring-cyan-400 text-white cursor-pointer"
+              title={isFullscreen ? 'Exit Full Screen (Esc / F)' : 'Full Screen Play (F)'}
+              className={`px-3 py-1.5 rounded-xl focus:ring-2 focus:ring-cyan-400 text-xs font-extrabold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                isFullscreen
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_15px_rgba(225,29,72,0.5)]'
+                  : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+              }`}
             >
               {isFullscreen ? (
-                <Minimize2 className="w-4 h-4 text-cyan-300" />
+                <>
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span>Exit Full Screen</span>
+                </>
               ) : (
-                <Maximize2 className="w-4 h-4" />
+                <>
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span>Full Screen Play</span>
+                </>
               )}
             </button>
           </div>
