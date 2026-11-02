@@ -1,4 +1,4 @@
-name: Build & Upload KP TV Android APK
+name: Build & Upload KP TV Android APK (v2.5.0)
 
 on:
   push:
@@ -13,12 +13,32 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Debug APK (JDK 17 + SDK 34)
+    name: Build Web Bundle & Android TV Debug APK (v2.5.0)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Web Dependencies & Build Production Bundle
+        run: |
+          npm install --legacy-peer-deps
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Sync Web Bundle into Android WebView Assets
+        run: |
+          rm -rf android/app/src/main/assets/www/*
+          mkdir -p android/app/src/main/assets/www
+          cp -r dist/index.html dist/assets dist/version.json dist/data android/app/src/main/assets/www/
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -29,32 +49,42 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Make gradlew executable
+      - name: Make gradlew executable & Build Debug APK
         working-directory: ./android
-        run: chmod +x ./gradlew
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Build Debug APK
-        working-directory: ./android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Copy Updated APK to releases/ and public/
+        run: |
+          mkdir -p releases public
+          cp android/app/build/outputs/apk/debug/app-debug.apk releases/kp-tv-launcher-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk public/kp-tv-launcher-debug.apk
+          sha256sum public/kp-tv-launcher-debug.apk
 
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kp-tv-launcher-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: kp-tv-launcher-v2.5.0-debug-apk
+          path: releases/kp-tv-launcher-debug.apk
           if-no-files-found: error
 
-      - name: Publish APK to GitHub Releases (on tag or manual trigger)
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+      - name: Publish Updated APK to GitHub Releases
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name == 'main' && 'v1.0.0-latest' || github.ref_name }}
-          name: KP TV Smart TV Launcher (${{ github.ref_name }})
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v2.5.0-latest' }}
+          name: KP TV Smart TV Launcher v2.5.0 (${{ github.ref_name }})
           body: |
-            ### KP TV – Smart TV Launcher (Iconic 32" Smart TV / Cloud TV OS)
-            - **Package Name**: `com.kptv.launcher`
+            ### KP TV – Smart TV Launcher v2.5.0 (Android TV / Google TV / Cloud TV OS)
+            - **Package Name**: `com.kptv.launcher` (Version `2.5.0`, Build `5`)
             - **SDK Compatibility**: Android 5.0 (API 21) – Android 14 (API 34)
-            - **100% Ads-Free & Non-Destructive**: Preserves stock launcher, Netflix, and Prime Video.
+            - **What's New in v2.5.0**:
+              1. **16-Point Advanced TV Compatibility Checker** (`Settings -> Check TV Compatibility`)
+              2. **Automatic Error Detection & Safe Auto-Repair** (`Settings -> Auto Error Repair`)
+              3. **Universal QR Code URL Input System** (IPTV M3U, Online Video, GitHub Repo, Backup & Remote Config)
+              4. **Rebuilt IPTV Section** with **Indian-IPTV-App** (`https://github.com/kananinirav/Indian-IPTV-App.git`) integration & Multi-Playlist Manager
+              5. **VLC-Style Online Link Player** (`.m3u8`, `.mp4`, `.webm`, `.ts`, aspect ratio, speed, tracks)
+              6. **Launcher Customization, Backup/Restore & SHA-256 Update Manager**
           files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
             releases/kp-tv-launcher-debug.apk
