@@ -18,7 +18,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose }) => {
             <div>
               <h2 className="text-2xl font-black text-white">KP TV – Smart TV Launcher</h2>
               <p className="text-xs text-cyan-300 font-semibold">
-                Version 1.0.0 Pro • Pure Ads-Free Experience
+                Version 2.6.0 Pro (Build 6) • Pure Ads-Free Experience
               </p>
             </div>
           </div>

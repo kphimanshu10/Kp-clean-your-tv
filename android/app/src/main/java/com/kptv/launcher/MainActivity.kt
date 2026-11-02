@@ -10,8 +10,10 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -49,6 +51,8 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     private var activeQrContext: String = "iptv-m3u"
     private var qrServerSocket: ServerSocket? = null
+    private var customFullscreenView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
     companion object {
         private const val LOCAL_HOST = "kptv.local"
@@ -264,6 +268,38 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (customFullscreenView != null) {
+                    callback?.onCustomViewHidden()
+                    return
+                }
+                customFullscreenView = view
+                customViewCallback = callback
+                val decor = window.decorView as? ViewGroup
+                decor?.addView(
+                    view,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
+                binding.kpTvWebview.visibility = View.GONE
+                enableImmersiveFullscreen()
+            }
+
+            override fun onHideCustomView() {
+                val decor = window.decorView as? ViewGroup
+                customFullscreenView?.let { decor?.removeView(it) }
+                customFullscreenView = null
+                customViewCallback?.onCustomViewHidden()
+                customViewCallback = null
+                binding.kpTvWebview.visibility = View.VISIBLE
+                enableImmersiveFullscreen()
+                binding.kpTvWebview.requestFocus()
+            }
+        }
     }
 
     private fun resolveMimeType(path: String): String {
@@ -312,6 +348,11 @@ class MainActivity : AppCompatActivity() {
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 KeyEvent.KEYCODE_MEDIA_PLAY,
                 KeyEvent.KEYCODE_MEDIA_PAUSE -> "MediaPlayPause"
+                KeyEvent.KEYCODE_CHANNEL_UP,
+                KeyEvent.KEYCODE_PAGE_UP -> "ChannelUp"
+                KeyEvent.KEYCODE_CHANNEL_DOWN,
+                KeyEvent.KEYCODE_PAGE_DOWN -> "ChannelDown"
+                KeyEvent.KEYCODE_F -> "f"
                 else -> null
             }
 

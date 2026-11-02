@@ -1,21 +1,21 @@
 {
   "appName": "KP TV – Smart TV Launcher",
   "packageName": "com.kptv.launcher",
-  "versionName": "2.5.0",
-  "versionCode": 5,
+  "versionName": "2.6.0",
+  "versionCode": 6,
   "releaseDate": "2026-11-02",
   "downloadUrl": "/kp-tv-launcher-debug.apk",
-  "fileSizeBytes": 5466318,
-  "sha256": "a38766228b8606c65a3ee190e92e119fc076c2a3eaa00125e0c239552d8882c9",
+  "fileSizeBytes": 7561460,
+  "downloadSizeBytes": 7561460,
+  "sha256": "2e5b6a3c558967094b9241a4490035ec4765e6c857de2cd73883971e48e054ef",
   "minAndroidSdk": 21,
   "targetAndroidSdk": 34,
   "releaseNotes": [
+    "Added Full Screen Play option to IPTV Live TV Player and Online Link Video Player with top-right overlay button, control bar toggle, channel list quick-launch, and URL bar Full Screen Play button.",
+    "Added auto-hiding Full Screen OSD controls, double-click fullscreen toggle, keyboard/remote shortcuts (F, Back/Esc to exit fullscreen, ChannelUp/ChannelDown), and native Android WebView WebChromeClient fullscreen support.",
     "Added Advanced TV Compatibility Checker in Settings with real decoder, HDR, refresh rate, RAM, storage, and HOME launcher diagnostics.",
     "Added Automatic Error Detection & Safe Auto-Repair engine for IPTV playlists, network endpoints, and launcher state.",
     "Added Universal QR Code URL Input System with authenticated local LAN/relay sessions for M3U, Online Video, GitHub Repo, and Backup URLs.",
-    "Rebuilt IPTV Live TV section integrating Indian-IPTV-App (kananinirav/Indian-IPTV-App) stream catalog, multi-playlist manager, favorites, recently watched, and HLS.js recovery.",
-    "Added VLC-Style Online Link Player supporting M3U8, MP4, WebM, playback speed (0.5x-2.0x), aspect ratio, audio/subtitle tracks, and history.",
-    "Added KP TV Updates manager with SHA-256 verification and native Android PackageInstaller support."
-  ],
-  "downloadSizeBytes": 7558256
+    "Integrated Indian-IPTV-App (kananinirav/Indian-IPTV-App) stream catalog, multi-playlist manager, favorites, recently watched, and HLS.js recovery."
+  ]
 }

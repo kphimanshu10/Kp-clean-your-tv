@@ -1,4 +1,4 @@
-name: Build & Upload KP TV Android APK (v2.5.0)
+name: Build & Upload KP TV Android APK (v2.6.0)
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Web Bundle & Android TV Debug APK (v2.5.0)
+    name: Build Web Bundle & Android TV Debug APK (v2.6.0)
     runs-on: ubuntu-latest
 
     steps:
@@ -65,7 +65,7 @@ jobs:
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kp-tv-launcher-v2.5.0-debug-apk
+          name: kp-tv-launcher-v2.6.0-debug-apk
           path: releases/kp-tv-launcher-debug.apk
           if-no-files-found: error
 
@@ -73,18 +73,19 @@ jobs:
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v2.5.0-latest' }}
-          name: KP TV Smart TV Launcher v2.5.0 (${{ github.ref_name }})
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v2.6.0-latest' }}
+          name: KP TV Smart TV Launcher v2.6.0 (${{ github.ref_name }})
           body: |
-            ### KP TV – Smart TV Launcher v2.5.0 (Android TV / Google TV / Cloud TV OS)
-            - **Package Name**: `com.kptv.launcher` (Version `2.5.0`, Build `5`)
+            ### KP TV – Smart TV Launcher v2.6.0 (Android TV / Google TV / Cloud TV OS)
+            - **Package Name**: `com.kptv.launcher` (Version `2.6.0`, Build `6`)
             - **SDK Compatibility**: Android 5.0 (API 21) – Android 14 (API 34)
-            - **What's New in v2.5.0**:
-              1. **16-Point Advanced TV Compatibility Checker** (`Settings -> Check TV Compatibility`)
-              2. **Automatic Error Detection & Safe Auto-Repair** (`Settings -> Auto Error Repair`)
-              3. **Universal QR Code URL Input System** (IPTV M3U, Online Video, GitHub Repo, Backup & Remote Config)
-              4. **Rebuilt IPTV Section** with **Indian-IPTV-App** (`https://github.com/kananinirav/Indian-IPTV-App.git`) integration & Multi-Playlist Manager
-              5. **VLC-Style Online Link Player** (`.m3u8`, `.mp4`, `.webm`, `.ts`, aspect ratio, speed, tracks)
-              6. **Launcher Customization, Backup/Restore & SHA-256 Update Manager**
+            - **What's New in v2.6.0**:
+              1. **Full Screen Play in IPTV & Online Link Video Player** (Top-right overlay toggle, control bar button, channel list quick-launch, URL bar Full Screen Play button, auto-hiding OSD, double-click & `F` / `Esc` / `ChannelUp` / `ChannelDown` remote shortcuts, and native Android `WebChromeClient` fullscreen support)
+              2. **16-Point Advanced TV Compatibility Checker** (`Settings -> Check TV Compatibility`)
+              3. **Automatic Error Detection & Safe Auto-Repair** (`Settings -> Auto Error Repair`)
+              4. **Universal QR Code URL Input System** (IPTV M3U, Online Video, GitHub Repo, Backup & Remote Config)
+              5. **Rebuilt IPTV Section** with **Indian-IPTV-App** (`https://github.com/kananinirav/Indian-IPTV-App.git`) integration & Multi-Playlist Manager
+              6. **VLC-Style Online Link Player** (`.m3u8`, `.mp4`, `.webm`, `.ts`, aspect ratio, speed, tracks)
+              7. **Launcher Customization, Backup/Restore & SHA-256 Update Manager**
           files: |
             releases/kp-tv-launcher-debug.apk

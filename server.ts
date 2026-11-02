@@ -323,6 +323,17 @@ async function startServer() {
     res.sendFile(path.join(__dirname, 'public', 'version.json'));
   });
 
+  // Serve the latest built & signed Android TV APK directly from public/ with no-store headers
+  app.get('/kp-tv-launcher-debug.apk', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="kp-tv-launcher-v2.6.0-debug.apk"'
+    );
+    res.sendFile(path.join(__dirname, 'public', 'kp-tv-launcher-debug.apk'));
+  });
+
   // Dynamically generate and stream KP_TV_Smart_Launcher_Android_Project.zip on demand to avoid static bundle bloat
   app.get('/KP_TV_Smart_Launcher_Android_Project.zip', async (_req, res) => {
     try {
