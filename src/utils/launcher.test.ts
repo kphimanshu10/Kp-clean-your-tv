@@ -16,6 +16,10 @@ import { mapWmoWeatherCode } from '../services/weatherService';
 import { proxyFetchCricketMatches } from '../../server';
 import { ANDROID_PROJECT_FILES } from './androidProjectGenerator';
 import { GRADLE_WRAPPER_JAR_BASE64 } from './gradleWrapperAssets';
+import { parseStreamsCsv, parseM3uPlaylistContent } from '../data/indianIptvRepo';
+import { validateHttpUrl } from '../components/Modals/UniversalQrUrlModal';
+import { runFullTvCompatibilityTest } from './compatibilityChecker';
+import { compareVersions, formatBytes } from './updateManager';
 
 test('calculateBallsRemaining calculates 50-over remaining balls correctly', () => {
   assert.equal(calculateBallsRemaining('45.0', 50), 30);
@@ -182,6 +186,58 @@ test('mapWmoWeatherCode maps WMO codes accurately', () => {
   assert.deepEqual(mapWmoWeatherCode(95), { conditionText: 'Thunderstorm', iconKind: 'thunderstorm' });
 });
 
+test('Indian-IPTV-App parseStreamsCsv and parseM3uPlaylistContent parse channels accurately', () => {
+  const sampleCsv = `name,stream
+Indian TV,https://raw.githubusercontent.com/iptv-org/iptv/refs/heads/master/streams/in.m3u
+Sports,https://iptv-org.github.io/iptv/categories/sports.m3u`;
+  const sources = parseStreamsCsv(sampleCsv);
+  assert.equal(sources.length, 2);
+  assert.equal(sources[0].name, 'Indian TV');
+  assert.equal(sources[1].name, 'Sports');
+
+  const sampleM3u = `#EXTM3U
+#EXTINF:-1 tvg-logo="https://example.com/ddsports.png" group-title="Sports",DD Sports HD
+https://example.com/live/ddsports.m3u8
+#EXTINF:-1 group-title="News",NDTV India
+https://example.com/live/ndtv.m3u8`;
+  const channels = parseM3uPlaylistContent(sampleM3u, 'https://example.com/test.m3u');
+  assert.equal(channels.length, 2);
+  assert.equal(channels[0].name, 'DD Sports HD');
+  assert.equal(channels[0].category, 'Sports');
+  assert.equal(channels[0].logoUrl, 'https://example.com/ddsports.png');
+  assert.equal(channels[1].name, 'NDTV India');
+  assert.equal(channels[1].category, 'News');
+});
+
+test('Universal QR URL validator strictly enforces HTTP/HTTPS URLs', () => {
+  const validHttps = validateHttpUrl('https://iptv-org.github.io/iptv/index.m3u');
+  assert.equal(validHttps.valid, true);
+  assert.equal(validHttps.warning, undefined);
+
+  const validHttp = validateHttpUrl('http://192.168.1.50:8080/live.m3u8');
+  assert.equal(validHttp.valid, true);
+  assert.ok(validHttp.warning?.includes('HTTP'));
+
+  const invalidScheme = validateHttpUrl('javascript:alert(1)');
+  assert.equal(invalidScheme.valid, false);
+});
+
+test('Advanced TV Compatibility Checker produces complete 16-point report', async () => {
+  const report = await runFullTvCompatibilityTest();
+  assert.equal(report.items.length, 16);
+  assert.ok(report.items.some(i => i.id === 'android-version'));
+  assert.ok(report.items.some(i => i.id === 'video-decoders'));
+  assert.ok(report.items.some(i => i.id === 'hdr-dolby'));
+  assert.ok(report.items.some(i => i.id === 'launcher-replacement'));
+});
+
+test('Update Manager version comparison and byte formatting work accurately', () => {
+  assert.ok(compareVersions(4, 5) > 0);
+  assert.equal(compareVersions(5, 5), 0);
+  assert.ok(compareVersions(5, 3) < 0);
+  assert.equal(formatBytes(5242880), '5.00 MB');
+});
+
 test('Android project generator includes all required Gradle Wrapper, Manifest, Kotlin, and resource files', () => {
   const requiredFiles = [
     'gradlew',
@@ -232,6 +288,7 @@ test('Android project generator includes all required Gradle Wrapper, Manifest, 
   assert.ok(manifest.includes('android.intent.category.HOME'));
   assert.ok(manifest.includes('android:screenOrientation="sensorLandscape"'));
   assert.ok(manifest.includes('android:hardwareAccelerated="true"'));
+  assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'));
 
   // Verify MainActivity hosts secure fullscreen WebView with AndroidTvBridge
   const mainActivity = ANDROID_PROJECT_FILES['app/src/main/java/com/kptv/launcher/MainActivity.kt'];
@@ -240,6 +297,9 @@ test('Android project generator includes all required Gradle Wrapper, Manifest, 
   assert.ok(mainActivity.includes('allowContentAccess = false'));
   assert.ok(mainActivity.includes('textZoom = 100'));
   assert.ok(mainActivity.includes('AndroidTvBridge'));
+  assert.ok(mainActivity.includes('getCompatibilityReportJson'));
+  assert.ok(mainActivity.includes('verifyAndInstallApkUrl'));
+  assert.ok(mainActivity.includes('getQrSessionInfoJson'));
 
   const layoutXml = ANDROID_PROJECT_FILES['app/src/main/res/layout/activity_main.xml'];
   assert.ok(layoutXml.includes('android.webkit.WebView'));
@@ -253,6 +313,7 @@ test('Android project generator includes all required Gradle Wrapper, Manifest, 
   assert.ok(mainActivity.includes('getIptvQrUrl'));
   assert.ok(mainActivity.includes('openSystemSettings'));
 });
+
 
 
 

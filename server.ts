@@ -276,8 +276,11 @@ export async function proxyFetchCricketMatches(configOverride?: {
   }
 }
 
-// Mobile QR IPTV Paste Sessions (allows scanning QR code on mobile phone to send IPTV playlist link to TV)
-const iptvQrSessions = new Map<string, { playlistUrl: string; updatedAt: number }>();
+// Mobile QR URL Input Sessions (supports Universal QR URL Input across IPTV, Online Video, GitHub Repo, Backup & Remote Config)
+const iptvQrSessions = new Map<
+  string,
+  { playlistUrl: string; contextType: string; token: string; updatedAt: number }
+>();
 
 async function startServer() {
   const app = express();
@@ -314,20 +317,28 @@ async function startServer() {
     res.json(result);
   });
 
-  // Mobile QR Scan Landing Page: User scans QR on TV with phone -> pastes IPTV playlist link -> sends to TV
+  // Serve version.json manifest for KP TV Updates checker
+  app.get('/api/version', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(path.join(__dirname, 'public', 'version.json'));
+  });
+
+  // Universal Mobile QR Scan Landing Page: User scans QR on TV with phone -> pastes URL -> sends to TV
   app.get('/iptv-remote/:sessionId', (req, res) => {
     const sessionId = String(req.params.sessionId || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
+    const contextType = String(req.query.context || 'iptv-m3u').replace(/[^a-zA-Z0-9_-]/g, '');
+    const token = String(req.query.token || '').replace(/[^a-zA-Z0-9_-]/g, '');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>KP TV – Paste IPTV Playlist Link</title>
+  <title>KP TV – Universal QR URL Input</title>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
     body { margin: 0; min-height: 100vh; background: #030712; color: #f8fafc; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .card { width: 100%; max-width: 420px; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+    .card { width: 100%; max-width: 420px; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.85); }
     .badge { display: inline-block; background: rgba(2, 132, 199, 0.25); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; margin-bottom: 12px; letter-spacing: 0.05em; }
     h1 { margin: 0 0 6px; font-size: 22px; font-weight: 900; }
     p { margin: 0 0 18px; font-size: 13px; color: #94a3b8; line-height: 1.45; }
@@ -342,13 +353,13 @@ async function startServer() {
 </head>
 <body>
   <div class="card">
-    <span class="badge">KP TV • REMOTE IPTV PASTE</span>
-    <h1>Send IPTV Link to TV</h1>
-    <p>Paste your M3U / M3U8 IPTV playlist link below and tap Send. Your KP TV Launcher will load the playlist automatically.</p>
+    <span class="badge">KP TV • UNIVERSAL QR INPUT (${contextType.toUpperCase()})</span>
+    <h1>Send URL to KP TV</h1>
+    <p>Paste your M3U playlist, M3U8/MP4 online video stream, GitHub repository, or backup URL below and tap Send.</p>
     <form id="iptvForm">
-      <label for="playlistUrl">IPTV Playlist Link (.m3u / .m3u8)</label>
-      <input id="playlistUrl" name="playlistUrl" type="url" placeholder="https://.../playlist.m3u" required autofocus />
-      <button type="submit">Send Playlist to KP TV</button>
+      <label for="playlistUrl">Target URL (HTTP / HTTPS)</label>
+      <input id="playlistUrl" name="playlistUrl" type="url" placeholder="https://..." required autofocus />
+      <button type="submit">Send URL to KP TV</button>
     </form>
     <div id="statusMsg" class="msg"></div>
   </div>
@@ -363,7 +374,7 @@ async function startServer() {
         const res = await fetch('/api/iptv-qr/${sessionId}', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playlistUrl: url })
+          body: JSON.stringify({ playlistUrl: url, contextType: '${contextType}', token: '${token}' })
         });
         if (res.ok) {
           statusMsg.className = 'msg ok';
@@ -384,7 +395,12 @@ async function startServer() {
   app.get('/api/iptv-qr/:sessionId', (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     const sessionId = String(req.params.sessionId || 'default');
-    const data = iptvQrSessions.get(sessionId) || { playlistUrl: '', updatedAt: 0 };
+    const data = iptvQrSessions.get(sessionId) || {
+      playlistUrl: '',
+      contextType: 'iptv-m3u',
+      token: '',
+      updatedAt: 0,
+    };
     res.json(data);
   });
 
@@ -392,11 +408,25 @@ async function startServer() {
     res.setHeader('Access-Control-Allow-Origin', '*');
     const sessionId = String(req.params.sessionId || 'default');
     const playlistUrl = String(req.body?.playlistUrl || '').trim();
+    const contextType = String(req.body?.contextType || 'iptv-m3u').trim();
+    const token = String(req.body?.token || '').trim();
+
     if (!playlistUrl) {
       res.status(400).json({ error: 'Missing playlistUrl' });
       return;
     }
-    const record = { playlistUrl, updatedAt: Date.now() };
+    try {
+      const parsed = new URL(playlistUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        res.status(400).json({ error: 'Only HTTP/HTTPS URLs are permitted' });
+        return;
+      }
+    } catch {
+      res.status(400).json({ error: 'Malformed URL' });
+      return;
+    }
+
+    const record = { playlistUrl, contextType, token, updatedAt: Date.now() };
     iptvQrSessions.set(sessionId, record);
     res.json({ ok: true, ...record });
   });

@@ -11,6 +11,7 @@ import { SetopboxCard } from './components/HeroCards/SetopboxCard';
 import { CricketScoreCard } from './components/HeroCards/CricketScoreCard';
 import { BottomDock } from './components/BottomDock';
 import { LiveTvModal } from './components/Modals/LiveTvModal';
+import { OnlineLinkPlayerModal } from './components/Modals/OnlineLinkPlayerModal';
 import { SetopboxModal } from './components/Modals/SetopboxModal';
 import { CricketScoreModal } from './components/Modals/CricketScoreModal';
 import { AppDrawerModal } from './components/Modals/AppDrawerModal';
@@ -73,7 +74,7 @@ export default function App() {
     headerIndex: 0,
   });
 
-  // Brief non-intrusive TV status toast (replaces simulator modal)
+  // Brief non-intrusive TV status toast
   const [tvToast, setTvToast] = useState<string | null>(null);
   const showTvToast = useCallback((msg: string) => {
     setTvToast(msg);
@@ -114,7 +115,8 @@ export default function App() {
                   na.packageName.toLowerCase() === dockItem.packageName.toLowerCase() ||
                   (dockItem.id === 'youtube' && na.packageName.toLowerCase().includes('youtube')) ||
                   (dockItem.id === 'hotstar' && na.packageName.toLowerCase().includes('hotstar')) ||
-                  (dockItem.id === 'netmirror' && na.packageName.toLowerCase().includes('netmirror')) ||
+                  (dockItem.id === 'netmirror' &&
+                    na.packageName.toLowerCase().includes('netmirror')) ||
                   (dockItem.id === 'airtel' && na.packageName.toLowerCase().includes('airtel'))
               );
               if (match) {
@@ -127,8 +129,6 @@ export default function App() {
                   isInstalled: true,
                 };
               }
-              // Keep in Dock with default icon & name as last build launcher,
-              // but mark isInstalled: false so Apps section only shows installed apps
               return {
                 ...dockItem,
                 isInstalled: false,
@@ -180,6 +180,7 @@ export default function App() {
     const defaults: LauncherSettings = {
       clockFormat: '12h',
       showDate: true,
+      dateFormat: 'short',
       wallpaperPreset: 'reference-mountain',
       customWallpaperUrl: '',
       soundEffects: true,
@@ -189,6 +190,11 @@ export default function App() {
       safeRecoveryConfirmed: true,
       weatherLocation: 'New Delhi',
       temperatureUnit: 'C',
+      themeMode: 'dark-cinematic',
+      accentColor: 'cyan',
+      showWeatherWidget: true,
+      showCricketWidget: true,
+      showQuickStatusBar: true,
     };
     try {
       const saved = localStorage.getItem('kptv_settings');
@@ -205,6 +211,7 @@ export default function App() {
   const [activeModal, setActiveModal] = useState<
     | 'none'
     | 'livetv'
+    | 'onlineplayer'
     | 'setopbox'
     | 'cricket'
     | 'apps'
@@ -214,6 +221,8 @@ export default function App() {
     | 'notifications'
     | 'wallpaper'
   >('none');
+
+  const [onlinePlayerInitialUrl, setOnlinePlayerInitialUrl] = useState<string>('');
 
   // Refresh Live Cricket Score
   const refreshCricketScores = useCallback(async (configOverride?: CricketApiConfig) => {
@@ -281,10 +290,16 @@ export default function App() {
     ? 'custom-image'
     : 'default-mountain';
 
-  // Direct Application Launch via Native Android Bridge (No simulator modal)
+  // Direct Application Launch via Native Android Bridge
   const triggerAppLaunch = useCallback(
     (app: AppShortcut) => {
       soundFx.playSelect();
+      setApps(prev =>
+        prev.map(item =>
+          item.id === app.id ? { ...item, lastOpenedAt: Date.now() } : item
+        )
+      );
+
       if (
         typeof window !== 'undefined' &&
         window.AndroidTvBridge &&
@@ -315,9 +330,36 @@ export default function App() {
         return;
       }
     }
-    // If running in browser or user needs to select HDMI/AV source
     setActiveModal('setopbox');
   }, [settings.defaultSetopboxPort, showTvToast]);
+
+  // Reorder Dock Apps Left / Right
+  const handleReorderDockApp = useCallback((appId: string, direction: 'left' | 'right') => {
+    soundFx.playFocus();
+    setApps(prev => {
+      const currentDock = prev
+        .filter(a => a.inDock)
+        .sort((a, b) => a.dockOrder - b.dockOrder);
+      const index = currentDock.findIndex(a => a.id === appId);
+      if (index === -1) return prev;
+      const swapIndex = direction === 'left' ? index - 1 : index + 1;
+      if (swapIndex < 0 || swapIndex >= currentDock.length) return prev;
+
+      const updatedOrder = [...currentDock];
+      const temp = updatedOrder[index];
+      updatedOrder[index] = updatedOrder[swapIndex];
+      updatedOrder[swapIndex] = temp;
+
+      const orderMap = new Map<string, number>();
+      updatedOrder.forEach((item, idx) => orderMap.set(item.id, idx + 1));
+
+      return prev.map(item =>
+        orderMap.has(item.id)
+          ? { ...item, dockOrder: orderMap.get(item.id)! }
+          : item
+      );
+    });
+  }, []);
 
   // D-Pad Remote Direction Handler
   const handleDpadMove = useCallback(
@@ -328,7 +370,7 @@ export default function App() {
       if (activeModal !== 'none') {
         const focusables = Array.from(
           document.querySelectorAll<HTMLElement>(
-            '.fixed.inset-0 button:not([disabled]), .fixed.inset-0 input:not([disabled]), .fixed.inset-0 a[href]'
+            '.fixed.inset-0 button:not([disabled]), .fixed.inset-0 input:not([disabled]), .fixed.inset-0 select:not([disabled]), .fixed.inset-0 a[href], .fixed.inset-0 [tabindex="0"]'
           )
         );
         if (focusables.length === 0) return;
@@ -478,6 +520,17 @@ export default function App() {
           e.preventDefault();
           handleRemoteHome();
           break;
+        case 'ContextMenu':
+        case 'F1':
+          e.preventDefault();
+          setActiveModal('settings');
+          break;
+        case 'MediaPlayPause':
+          e.preventDefault();
+          if (activeModal === 'none') {
+            setActiveModal('livetv');
+          }
+          break;
         default:
           break;
       }
@@ -485,7 +538,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDpadMove, handleRemoteEnter, handleRemoteBack, handleRemoteHome]);
+  }, [activeModal, handleDpadMove, handleRemoteEnter, handleRemoteBack, handleRemoteHome]);
 
   // Toggle Pin/Unpin from Home Dock
   const handleToggleDockPin = (appId: string) => {
@@ -542,6 +595,9 @@ export default function App() {
         <Header
           clockFormat={settings.clockFormat}
           showDate={settings.showDate}
+          dateFormat={settings.dateFormat}
+          showWeatherWidget={settings.showWeatherWidget}
+          showQuickStatusBar={settings.showQuickStatusBar}
           weatherLocation={settings.weatherLocation}
           temperatureUnit={settings.temperatureUnit}
           focusedZone={navState.zone}
@@ -550,6 +606,11 @@ export default function App() {
           onSelectWifi={() => setActiveModal('wifi')}
           onSelectSettings={() => setActiveModal('settings')}
           onSelectNotifications={() => setActiveModal('notifications')}
+          onSelectOnlinePlayer={() => {
+            soundFx.playSelect();
+            setOnlinePlayerInitialUrl('');
+            setActiveModal('onlineplayer');
+          }}
         />
 
         {/* Main Body: Left Sidebar + 3 Hero Cards */}
@@ -622,7 +683,22 @@ export default function App() {
         />
 
         {/* Modals & Screens */}
-        {activeModal === 'livetv' && <LiveTvModal onClose={() => setActiveModal('none')} />}
+        {activeModal === 'livetv' && (
+          <LiveTvModal
+            onClose={() => setActiveModal('none')}
+            onOpenOnlineLinkPlayer={initialUrl => {
+              setOnlinePlayerInitialUrl(initialUrl || '');
+              setActiveModal('onlineplayer');
+            }}
+          />
+        )}
+
+        {activeModal === 'onlineplayer' && (
+          <OnlineLinkPlayerModal
+            initialUrl={onlinePlayerInitialUrl}
+            onClose={() => setActiveModal('none')}
+          />
+        )}
 
         {activeModal === 'setopbox' && (
           <SetopboxModal
@@ -666,6 +742,8 @@ export default function App() {
           <SettingsModal
             settings={settings}
             diagnostics={diagnostics}
+            dockApps={dockApps}
+            onReorderDockApp={handleReorderDockApp}
             onUpdateSettings={newS => setSettings(s => ({ ...s, ...newS }))}
             onOpenWallpaperStudio={() => setActiveModal('wallpaper')}
             onClose={() => {

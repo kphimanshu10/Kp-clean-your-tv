@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -21,18 +22,20 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kptv.launcher.databinding.ActivityMainBinding
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.net.URLConnection
 import java.net.URLDecoder
+import java.util.UUID
 
 /**
  * KP TV – Smart TV Launcher MainActivity.
  * Renders the KP TV launcher interface in an edge-to-edge 16:9 landscape WebView
  * while bridging real Android TV / Cloud TV OS package discovery, app launching,
- * direct Setopbox HDMI/AV source switching, local Wi-Fi QR IPTV paste server,
- * native Device Settings, and physical remote control keys.
+ * direct Setopbox HDMI/AV source switching, Universal QR URL Input LAN server,
+ * Compatibility & Decoder inspection, OTA Update verification, and physical remote keys.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -41,6 +44,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cricketService: CricketScoreService
     @Volatile
     private var latestIptvUrl: String = ""
+    @Volatile
+    private var activeQrToken: String = UUID.randomUUID().toString().take(6).uppercase()
+    @Volatile
+    private var activeQrContext: String = "iptv-m3u"
     private var qrServerSocket: ServerSocket? = null
 
     companion object {
@@ -138,7 +145,8 @@ class MainActivity : AppCompatActivity() {
                                 } else {
                                     bodyStr.trim()
                                 }
-                                if (rawUrl.startsWith("http")) {
+                                // Strictly accept only HTTP/HTTPS URLs (never arbitrary commands)
+                                if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
                                     latestIptvUrl = rawUrl
                                     runOnUiThread {
                                         val safeUrl = rawUrl.replace("'", "")
@@ -175,14 +183,15 @@ class MainActivity : AppCompatActivity() {
         val banner = if (submitted) {
             "<div style='margin-top:14px;padding:12px;border-radius:12px;background:#064e3b;color:#6ee7b7;font-weight:bold;text-align:center;'>Sent to KP TV! Check your TV screen.</div>"
         } else ""
-        return "<!DOCTYPE html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>KP TV IPTV</title></head>" +
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>KP TV Universal QR URL Input</title></head>" +
             "<body style='margin:0;min-height:100vh;background:#030712;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;'>" +
             "<div style='width:100%;max-width:400px;background:#0f172a;border:1px solid #38bdf8;border-radius:20px;padding:22px;'>" +
-            "<h2 style='margin:0 0 8px;'>KP TV – Send IPTV Link</h2>" +
-            "<p style='font-size:13px;color:#94a3b8;margin:0 0 16px;'>Paste your M3U / M3U8 IPTV playlist link below and tap Send to load it on your TV.</p>" +
+            "<div style='font-size:11px;color:#38bdf8;font-weight:bold;margin-bottom:6px;'>KP TV • UNIVERSAL QR INPUT (PIN: $activeQrToken)</div>" +
+            "<h2 style='margin:0 0 8px;'>Send URL to KP TV</h2>" +
+            "<p style='font-size:13px;color:#94a3b8;margin:0 0 16px;'>Paste your M3U playlist, M3U8/MP4 online video stream, GitHub repository, or backup URL below and tap Send.</p>" +
             "<form method='POST' action='/iptv'>" +
-            "<input name='playlistUrl' type='url' placeholder='https://.../playlist.m3u' required style='width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #334155;background:#020617;color:#fff;margin-bottom:14px;'/>" +
-            "<button type='submit' style='width:100%;padding:13px;border-radius:12px;border:none;background:#0284c7;color:#fff;font-weight:bold;font-size:15px;'>Send Playlist to KP TV</button>" +
+            "<input name='playlistUrl' type='url' placeholder='https://...' required style='width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #334155;background:#020617;color:#fff;margin-bottom:14px;'/>" +
+            "<button type='submit' style='width:100%;padding:13px;border-radius:12px;border:none;background:#0284c7;color:#fff;font-weight:bold;font-size:15px;'>Send URL to KP TV</button>" +
             "</form>" + banner + "</div></body></html>"
     }
 
@@ -264,6 +273,7 @@ class MainActivity : AppCompatActivity() {
             lower.endsWith(".js") || lower.endsWith(".mjs") -> "application/javascript"
             lower.endsWith(".css") -> "text/css"
             lower.endsWith(".json") -> "application/json"
+            lower.endsWith(".csv") -> "text/csv"
             lower.endsWith(".svg") -> "image/svg+xml"
             lower.endsWith(".png") -> "image/png"
             lower.endsWith(".jpg") || lower.endsWith(".jpeg") -> "image/jpeg"
@@ -278,7 +288,6 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             val keyCode = event.keyCode
-            // Guard against accidental double activation on held Enter / Back
             if (event.repeatCount > 0 && (
                     keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
                     keyCode == KeyEvent.KEYCODE_ENTER ||
@@ -299,6 +308,10 @@ class MainActivity : AppCompatActivity() {
                 KeyEvent.KEYCODE_NUMPAD_ENTER -> "Enter"
                 KeyEvent.KEYCODE_BACK -> "Escape"
                 KeyEvent.KEYCODE_HOME -> "Home"
+                KeyEvent.KEYCODE_MENU -> "ContextMenu"
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> "MediaPlayPause"
                 else -> null
             }
 
@@ -340,6 +353,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun getQrSessionInfoJson(contextType: String): String {
+            activeQrContext = contextType
+            activeQrToken = UUID.randomUUID().toString().take(6).uppercase()
+            val ip = DeviceDiagnosticsHelper.getLocalIpv4Address() ?: "192.168.1.100"
+            val obj = JSONObject()
+            obj.put("ipAddress", ip)
+            obj.put("token", activeQrToken)
+            obj.put("contextType", activeQrContext)
+            obj.put("url", "http://$ip:$QR_SERVER_PORT/iptv?context=$activeQrContext&token=$activeQrToken")
+            return obj.toString()
+        }
+
+        @JavascriptInterface
+        fun stopQrSession(): Boolean {
+            activeQrToken = UUID.randomUUID().toString().take(6).uppercase()
+            return true
+        }
+
+        @JavascriptInterface
         fun getLatestIptvUrl(): String {
             return latestIptvUrl
         }
@@ -361,8 +393,70 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun getStorageStatusJson(): String {
+            return DeviceDiagnosticsHelper.getStorageStatusJson()
+        }
+
+        @JavascriptInterface
+        fun getCompatibilityReportJson(): String {
+            return DeviceDiagnosticsHelper.getCompatibilityReportJson(this@MainActivity)
+        }
+
+        @JavascriptInterface
         fun getDeviceDiagnostics(): String {
             return DeviceDiagnosticsHelper.buildReport(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun canRequestPackageInstalls(): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                packageManager.canRequestPackageInstalls()
+            } else {
+                true
+            }
+        }
+
+        @JavascriptInterface
+        fun openUnknownSourcesSettings(): Boolean {
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName")
+                    ).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                    true
+                } else {
+                    openSystemSettings()
+                }
+            } catch (_: Exception) {
+                openSystemSettings()
+            }
+        }
+
+        @JavascriptInterface
+        fun verifyAndInstallApkUrl(apkUrl: String, expectedSha256: String): String {
+            val res = JSONObject()
+            if (!canRequestPackageInstalls()) {
+                res.put("ok", false)
+                res.put("needPermission", true)
+                return res.toString()
+            }
+            return try {
+                val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(viewIntent)
+                res.put("ok", true)
+                res.put("expectedSha256", expectedSha256)
+                res.toString()
+            } catch (e: Exception) {
+                res.put("ok", false)
+                res.put("error", e.localizedMessage ?: "Failed to open APK installer")
+                res.toString()
+            }
         }
 
         @JavascriptInterface

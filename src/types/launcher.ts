@@ -1,10 +1,10 @@
 export type ScreenView = 'home' | 'apps' | 'settings' | 'about';
 
-export type FocusArea = 
-  | 'sidebar' 
-  | 'card-livetv' 
-  | 'card-setopbox' 
-  | 'card-cricket' 
+export type FocusArea =
+  | 'sidebar'
+  | 'card-livetv'
+  | 'card-setopbox'
+  | 'card-cricket'
   | 'dock'
   | 'header-wifi'
   | 'header-settings'
@@ -17,7 +17,20 @@ export interface AppShortcut {
   name: string;
   packageName: string;
   activityName?: string;
-  iconType: 'netmirror' | 'netflix' | 'youtube' | 'hotstar' | 'airtel' | 'more' | 'custom' | 'browser' | 'files' | 'vlc' | 'mxplayer' | 'spotify' | 'prime';
+  iconType:
+    | 'netmirror'
+    | 'netflix'
+    | 'youtube'
+    | 'hotstar'
+    | 'airtel'
+    | 'more'
+    | 'custom'
+    | 'browser'
+    | 'files'
+    | 'vlc'
+    | 'mxplayer'
+    | 'spotify'
+    | 'prime';
   customIcon?: string;
   category: 'streaming' | 'tv' | 'utility' | 'system' | 'music' | 'media';
   inDock: boolean;
@@ -26,6 +39,7 @@ export interface AppShortcut {
   isTrusted?: boolean;
   isInstalled?: boolean;
   accentColor: string;
+  lastOpenedAt?: number;
 }
 
 export type CricketServiceStatus = 'unconfigured' | 'loading' | 'live' | 'error' | 'offline';
@@ -47,7 +61,7 @@ export interface CricketMatch {
     code: string;
     score: string;
     overs: string;
-    flag: string; // SVG or color code
+    flag: string;
   };
   team2: {
     name: string;
@@ -73,11 +87,14 @@ export interface LiveChannel {
   resolution: '1080p' | '720p' | '4K';
   isHd: boolean;
   currentProgram: string;
+  groupTitle?: string;
+  isFavorite?: boolean;
 }
 
 export interface LauncherSettings {
   clockFormat: '12h' | '24h';
   showDate: boolean;
+  dateFormat?: 'short' | 'full' | 'numeric';
   wallpaperPreset: string;
   customWallpaperUrl: string;
   soundEffects: boolean;
@@ -87,6 +104,11 @@ export interface LauncherSettings {
   safeRecoveryConfirmed: boolean;
   weatherLocation: string;
   temperatureUnit: 'C' | 'F';
+  themeMode?: 'dark-cinematic' | 'midnight-oled' | 'deep-ocean';
+  accentColor?: 'cyan' | 'blue' | 'emerald' | 'amber' | 'rose';
+  showWeatherWidget?: boolean;
+  showCricketWidget?: boolean;
+  showQuickStatusBar?: boolean;
 }
 
 export interface WeatherData {
@@ -132,6 +154,13 @@ export interface AndroidWifiStatus {
   ipAddress: string;
 }
 
+export type QrUrlInputContextType =
+  | 'iptv-m3u'
+  | 'online-video'
+  | 'github-repo'
+  | 'backup-restore'
+  | 'remote-config';
+
 export interface AndroidTvBridgeInterface {
   isNativeAndroid?: () => boolean;
   launchApp?: (packageName: string) => boolean;
@@ -142,10 +171,18 @@ export interface AndroidTvBridgeInterface {
   getCricketConfig?: () => string;
   getWifiStatus?: () => string;
   getDeviceDiagnostics?: () => string;
+  getCompatibilityReportJson?: () => string;
+  getStorageStatusJson?: () => string;
   openSystemSettings?: () => boolean;
   openWifiSettings?: () => boolean;
   getIptvQrUrl?: () => string;
   getLatestIptvUrl?: () => string;
+  getQrSessionInfoJson?: (contextType: string) => string;
+  stopQrSession?: () => boolean;
+  getAppVersionInfoJson?: () => string;
+  canRequestPackageInstalls?: () => boolean;
+  openUnknownSourcesSettings?: () => boolean;
+  verifyAndInstallApkUrl?: (apkUrl: string, expectedSha256: string) => string;
 }
 
 declare global {
@@ -153,4 +190,3 @@ declare global {
     AndroidTvBridge?: AndroidTvBridgeInterface;
   }
 }
-

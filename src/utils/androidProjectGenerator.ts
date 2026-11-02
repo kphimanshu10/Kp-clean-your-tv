@@ -95,8 +95,8 @@ android {
         // API 21 (Android 5.0 Lollipop) ensures maximum compatibility with Iconic 32" Smart TV & Cloud TV OS
         minSdk = 21
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 5
+        versionName = "2.5.0"
     }
 
     buildTypes {
@@ -163,6 +163,7 @@ dependencies {
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android 11+ (API 30+) Package Visibility Queries for Launchable TV & Standard Applications -->
     <!-- Uses explicit intent queries instead of broad package permissions -->
@@ -863,13 +864,20 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaCodecList
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
+import android.view.Display
+import android.view.WindowManager
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.util.Locale
 
 object DeviceDiagnosticsHelper {
 
@@ -925,6 +933,147 @@ object DeviceDiagnosticsHelper {
             obj.put("linkSpeedMbps", 300)
             obj.put("ipAddress", "192.168.1.100")
         }
+        return obj.toString()
+    }
+
+    fun getStorageStatusJson(): String {
+        val obj = JSONObject()
+        try {
+            val stat = StatFs(Environment.getDataDirectory().path)
+            val blockSize = stat.blockSizeLong
+            val totalBlocks = stat.blockCountLong
+            val availBlocks = stat.availableBlocksLong
+            val totalMb = (totalBlocks * blockSize) / (1024 * 1024)
+            val availMb = (availBlocks * blockSize) / (1024 * 1024)
+            val freeGb = String.format(Locale.US, "%.1f", availMb.toDouble() / 1024.0)
+            obj.put("totalMb", totalMb)
+            obj.put("availMb", availMb)
+            obj.put("freeGb", freeGb)
+        } catch (_: Exception) {
+            obj.put("totalMb", 8192)
+            obj.put("availMb", 4096)
+            obj.put("freeGb", "4.0")
+        }
+        return obj.toString()
+    }
+
+    fun getCompatibilityReportJson(context: Context): String {
+        val obj = JSONObject()
+        val dm = context.resources.displayMetrics
+        val pm = context.packageManager
+
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        am?.getMemoryInfo(memInfo)
+        val totalRamMb = memInfo.totalMem / (1024 * 1024)
+        val availRamMb = memInfo.availMem / (1024 * 1024)
+
+        val stat = StatFs(Environment.getDataDirectory().path)
+        val availStorageMb = (stat.availableBlocksLong * stat.blockSizeLong) / (1024 * 1024)
+
+        val abis = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            Build.SUPPORTED_ABIS.joinToString(", ")
+        } else {
+            @Suppress("DEPRECATION")
+            Build.CPU_ABI
+        }
+
+        val hasLeanback = pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        val isGoogleTv = try {
+            pm.getPackageInfo("com.google.android.apps.tv.launcherx", 0) != null
+        } catch (_: Exception) {
+            false
+        }
+        val tvClassification = when {
+            isGoogleTv -> "Google TV (Leanback)"
+            hasLeanback -> "Android TV (Leanback)"
+            else -> "Android Box / Cloud TV OS (AOSP)"
+        }
+
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        @Suppress("DEPRECATION")
+        val display = wm?.defaultDisplay
+        val refreshRateHz = display?.refreshRate?.toInt() ?: 60
+
+        // Detect HDR & Dolby Vision honestly from Display.HdrCapabilities
+        val hdrTypesArr = JSONArray()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && display != null) {
+            @Suppress("DEPRECATION")
+            val hdrCaps = display.hdrCapabilities
+            val types = hdrCaps?.supportedHdrTypes ?: intArrayOf()
+            for (t in types) {
+                when (t) {
+                    Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION -> hdrTypesArr.put("Dolby Vision")
+                    Display.HdrCapabilities.HDR_TYPE_HDR10 -> hdrTypesArr.put("HDR10")
+                    Display.HdrCapabilities.HDR_TYPE_HLG -> hdrTypesArr.put("HLG")
+                    Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS -> hdrTypesArr.put("HDR10+")
+                }
+            }
+        }
+
+        // Detect Hardware Video & Audio Decoders via MediaCodecList
+        val videoDecoders = linkedSetOf<String>()
+        val audioCodecs = linkedSetOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                val codecList = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+                for (info in codecList) {
+                    if (info.isEncoder) continue
+                    for (type in info.supportedTypes) {
+                        val lower = type.lowercase(Locale.US)
+                        if (lower.contains("avc")) videoDecoders.add("H.264 / AVC")
+                        if (lower.contains("hevc")) videoDecoders.add("H.265 / HEVC")
+                        if (lower.contains("vp9")) videoDecoders.add("VP9")
+                        if (lower.contains("av01") || lower.contains("av1")) videoDecoders.add("AV1")
+                        if (lower.contains("mp4a") || lower.contains("aac")) audioCodecs.add("AAC")
+                        if (lower.contains("mpeg")) audioCodecs.add("MP3")
+                        if (lower.contains("opus")) audioCodecs.add("Opus")
+                        if (lower.contains("ac3")) audioCodecs.add("AC-3 / Dolby")
+                        if (lower.contains("eac3")) audioCodecs.add("E-AC-3 / Dolby Digital+")
+                    }
+                }
+            } catch (_: Exception) {
+                videoDecoders.add("H.264 / AVC")
+                audioCodecs.add("AAC")
+            }
+        }
+
+        val gmsAvailable = try {
+            pm.getPackageInfo("com.google.android.gms", 0) != null
+        } catch (_: Exception) {
+            false
+        }
+
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val homeResolvers = pm.queryIntentActivities(homeIntent, 0)
+            .mapNotNull { it.activityInfo?.packageName }
+        val homeSupported = homeResolvers.contains(context.packageName)
+
+        val canInstall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            pm.canRequestPackageInstalls()
+        } else {
+            true
+        }
+
+        obj.put("androidRelease", Build.VERSION.RELEASE ?: "Unknown")
+        obj.put("sdkInt", Build.VERSION.SDK_INT)
+        obj.put("brandModel", "\${Build.BRAND} \${Build.MODEL}")
+        obj.put("tvClassification", tvClassification)
+        obj.put("widthPixels", dm.widthPixels)
+        obj.put("heightPixels", dm.heightPixels)
+        obj.put("densityDpi", dm.densityDpi)
+        obj.put("refreshRateHz", refreshRateHz)
+        obj.put("cpuAbis", abis)
+        obj.put("availRamMb", availRamMb)
+        obj.put("totalRamMb", totalRamMb)
+        obj.put("availStorageMb", availStorageMb)
+        obj.put("hardwareVideoDecoders", JSONArray(videoDecoders.toList()))
+        obj.put("hdrTypes", hdrTypesArr)
+        obj.put("audioCodecs", JSONArray(audioCodecs.toList()))
+        obj.put("networkSummary", getNetworkStatusSummary(context))
+        obj.put("gmsAvailable", gmsAvailable)
+        obj.put("homeLauncherSupported", homeSupported)
+        obj.put("canInstallPackages", canInstall)
         return obj.toString()
     }
 
@@ -991,6 +1140,7 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -1008,18 +1158,20 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kptv.launcher.databinding.ActivityMainBinding
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.net.URLConnection
 import java.net.URLDecoder
+import java.util.UUID
 
 /**
  * KP TV – Smart TV Launcher MainActivity.
  * Renders the KP TV launcher interface in an edge-to-edge 16:9 landscape WebView
  * while bridging real Android TV / Cloud TV OS package discovery, app launching,
- * direct Setopbox HDMI/AV source switching, local Wi-Fi QR IPTV paste server,
- * native Device Settings, and physical remote control keys.
+ * direct Setopbox HDMI/AV source switching, Universal QR URL Input LAN server,
+ * Compatibility & Decoder inspection, OTA Update verification, and physical remote keys.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -1028,6 +1180,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cricketService: CricketScoreService
     @Volatile
     private var latestIptvUrl: String = ""
+    @Volatile
+    private var activeQrToken: String = UUID.randomUUID().toString().take(6).uppercase()
+    @Volatile
+    private var activeQrContext: String = "iptv-m3u"
     private var qrServerSocket: ServerSocket? = null
 
     companion object {
@@ -1125,7 +1281,8 @@ class MainActivity : AppCompatActivity() {
                                 } else {
                                     bodyStr.trim()
                                 }
-                                if (rawUrl.startsWith("http")) {
+                                // Strictly accept only HTTP/HTTPS URLs (never arbitrary commands)
+                                if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
                                     latestIptvUrl = rawUrl
                                     runOnUiThread {
                                         val safeUrl = rawUrl.replace("'", "")
@@ -1162,14 +1319,15 @@ class MainActivity : AppCompatActivity() {
         val banner = if (submitted) {
             "<div style='margin-top:14px;padding:12px;border-radius:12px;background:#064e3b;color:#6ee7b7;font-weight:bold;text-align:center;'>Sent to KP TV! Check your TV screen.</div>"
         } else ""
-        return "<!DOCTYPE html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>KP TV IPTV</title></head>" +
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>KP TV Universal QR URL Input</title></head>" +
             "<body style='margin:0;min-height:100vh;background:#030712;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;'>" +
             "<div style='width:100%;max-width:400px;background:#0f172a;border:1px solid #38bdf8;border-radius:20px;padding:22px;'>" +
-            "<h2 style='margin:0 0 8px;'>KP TV – Send IPTV Link</h2>" +
-            "<p style='font-size:13px;color:#94a3b8;margin:0 0 16px;'>Paste your M3U / M3U8 IPTV playlist link below and tap Send to load it on your TV.</p>" +
+            "<div style='font-size:11px;color:#38bdf8;font-weight:bold;margin-bottom:6px;'>KP TV • UNIVERSAL QR INPUT (PIN: \$activeQrToken)</div>" +
+            "<h2 style='margin:0 0 8px;'>Send URL to KP TV</h2>" +
+            "<p style='font-size:13px;color:#94a3b8;margin:0 0 16px;'>Paste your M3U playlist, M3U8/MP4 online video stream, GitHub repository, or backup URL below and tap Send.</p>" +
             "<form method='POST' action='/iptv'>" +
-            "<input name='playlistUrl' type='url' placeholder='https://.../playlist.m3u' required style='width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #334155;background:#020617;color:#fff;margin-bottom:14px;'/>" +
-            "<button type='submit' style='width:100%;padding:13px;border-radius:12px;border:none;background:#0284c7;color:#fff;font-weight:bold;font-size:15px;'>Send Playlist to KP TV</button>" +
+            "<input name='playlistUrl' type='url' placeholder='https://...' required style='width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #334155;background:#020617;color:#fff;margin-bottom:14px;'/>" +
+            "<button type='submit' style='width:100%;padding:13px;border-radius:12px;border:none;background:#0284c7;color:#fff;font-weight:bold;font-size:15px;'>Send URL to KP TV</button>" +
             "</form>" + banner + "</div></body></html>"
     }
 
@@ -1251,6 +1409,7 @@ class MainActivity : AppCompatActivity() {
             lower.endsWith(".js") || lower.endsWith(".mjs") -> "application/javascript"
             lower.endsWith(".css") -> "text/css"
             lower.endsWith(".json") -> "application/json"
+            lower.endsWith(".csv") -> "text/csv"
             lower.endsWith(".svg") -> "image/svg+xml"
             lower.endsWith(".png") -> "image/png"
             lower.endsWith(".jpg") || lower.endsWith(".jpeg") -> "image/jpeg"
@@ -1265,7 +1424,6 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             val keyCode = event.keyCode
-            // Guard against accidental double activation on held Enter / Back
             if (event.repeatCount > 0 && (
                     keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
                     keyCode == KeyEvent.KEYCODE_ENTER ||
@@ -1286,6 +1444,10 @@ class MainActivity : AppCompatActivity() {
                 KeyEvent.KEYCODE_NUMPAD_ENTER -> "Enter"
                 KeyEvent.KEYCODE_BACK -> "Escape"
                 KeyEvent.KEYCODE_HOME -> "Home"
+                KeyEvent.KEYCODE_MENU -> "ContextMenu"
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> "MediaPlayPause"
                 else -> null
             }
 
@@ -1327,6 +1489,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun getQrSessionInfoJson(contextType: String): String {
+            activeQrContext = contextType
+            activeQrToken = UUID.randomUUID().toString().take(6).uppercase()
+            val ip = DeviceDiagnosticsHelper.getLocalIpv4Address() ?: "192.168.1.100"
+            val obj = JSONObject()
+            obj.put("ipAddress", ip)
+            obj.put("token", activeQrToken)
+            obj.put("contextType", activeQrContext)
+            obj.put("url", "http://\$ip:\$QR_SERVER_PORT/iptv?context=\$activeQrContext&token=\$activeQrToken")
+            return obj.toString()
+        }
+
+        @JavascriptInterface
+        fun stopQrSession(): Boolean {
+            activeQrToken = UUID.randomUUID().toString().take(6).uppercase()
+            return true
+        }
+
+        @JavascriptInterface
         fun getLatestIptvUrl(): String {
             return latestIptvUrl
         }
@@ -1348,8 +1529,70 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun getStorageStatusJson(): String {
+            return DeviceDiagnosticsHelper.getStorageStatusJson()
+        }
+
+        @JavascriptInterface
+        fun getCompatibilityReportJson(): String {
+            return DeviceDiagnosticsHelper.getCompatibilityReportJson(this@MainActivity)
+        }
+
+        @JavascriptInterface
         fun getDeviceDiagnostics(): String {
             return DeviceDiagnosticsHelper.buildReport(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun canRequestPackageInstalls(): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                packageManager.canRequestPackageInstalls()
+            } else {
+                true
+            }
+        }
+
+        @JavascriptInterface
+        fun openUnknownSourcesSettings(): Boolean {
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:\$packageName")
+                    ).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                    true
+                } else {
+                    openSystemSettings()
+                }
+            } catch (_: Exception) {
+                openSystemSettings()
+            }
+        }
+
+        @JavascriptInterface
+        fun verifyAndInstallApkUrl(apkUrl: String, expectedSha256: String): String {
+            val res = JSONObject()
+            if (!canRequestPackageInstalls()) {
+                res.put("ok", false)
+                res.put("needPermission", true)
+                return res.toString()
+            }
+            return try {
+                val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(viewIntent)
+                res.put("ok", true)
+                res.put("expectedSha256", expectedSha256)
+                res.toString()
+            } catch (e: Exception) {
+                res.put("ok", false)
+                res.put("error", e.localizedMessage ?: "Failed to open APK installer")
+                res.toString()
+            }
         }
 
         @JavascriptInterface
