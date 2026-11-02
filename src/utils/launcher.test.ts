@@ -12,7 +12,10 @@ import {
 import { AppShortcut } from '../types/launcher';
 import { INITIAL_APPS, CRICKET_MATCHES } from '../data/mockData';
 import { fetchLiveCricketMatches } from '../services/cricketService';
+import { mapWmoWeatherCode } from '../services/weatherService';
+import { proxyFetchCricketMatches } from '../../server';
 import { ANDROID_PROJECT_FILES } from './androidProjectGenerator';
+import { GRADLE_WRAPPER_JAR_BASE64 } from './gradleWrapperAssets';
 
 test('calculateBallsRemaining calculates 50-over remaining balls correctly', () => {
   assert.equal(calculateBallsRemaining('45.0', 50), 30);
@@ -155,7 +158,7 @@ test('INITIAL_APPS follows preferred dock order and preserves Netflix & Prime Vi
 test('Live cricket service reports "Live score service not configured." when unconfigured and has no fake demo scores', async () => {
   assert.equal(CRICKET_MATCHES.length, 0);
   const res = await fetchLiveCricketMatches({
-    endpointUrl: 'https://api.cricapi.com/v1/currentMatches',
+    endpointUrl: '',
     apiKey: '',
   });
   assert.equal(res.status, 'unconfigured');
@@ -163,8 +166,26 @@ test('Live cricket service reports "Live score service not configured." when unc
   assert.equal(res.matches.length, 0);
 });
 
-test('Android project generator includes all required Gradle, Manifest, Kotlin, and resource files', () => {
+test('Backend proxyFetchCricketMatches handles unconfigured and invalid URL states safely without leaking secrets', async () => {
+  const unconf = await proxyFetchCricketMatches({ endpointUrl: '', apiKey: '' });
+  assert.equal(unconf.status, 'unconfigured');
+  assert.equal(unconf.errorMessage, 'Live score service not configured.');
+
+  const invalid = await proxyFetchCricketMatches({ endpointUrl: 'ftp://invalid-url', apiKey: 'test' });
+  assert.equal(invalid.status, 'error');
+});
+
+test('mapWmoWeatherCode maps WMO codes accurately', () => {
+  assert.deepEqual(mapWmoWeatherCode(0), { conditionText: 'Clear Sky', iconKind: 'clear-day' });
+  assert.deepEqual(mapWmoWeatherCode(2), { conditionText: 'Partly Cloudy', iconKind: 'partly-cloudy' });
+  assert.deepEqual(mapWmoWeatherCode(61), { conditionText: 'Rain', iconKind: 'rain' });
+  assert.deepEqual(mapWmoWeatherCode(95), { conditionText: 'Thunderstorm', iconKind: 'thunderstorm' });
+});
+
+test('Android project generator includes all required Gradle Wrapper, Manifest, Kotlin, and resource files', () => {
   const requiredFiles = [
+    'gradlew',
+    'gradlew.bat',
     'settings.gradle.kts',
     'build.gradle.kts',
     'gradle/libs.versions.toml',
@@ -196,6 +217,13 @@ test('Android project generator includes all required Gradle, Manifest, Kotlin, 
     assert.ok(ANDROID_PROJECT_FILES[file], `Missing required Android file: ${file}`);
   }
 
+  // Verify official gradle-wrapper.jar binary payload is present and non-empty
+  const jarBytes = Buffer.from(GRADLE_WRAPPER_JAR_BASE64, 'base64');
+  assert.ok(jarBytes.length > 40000, 'Expected valid gradle-wrapper.jar binary (>40KB)');
+  // Verify PK zip magic header
+  assert.equal(jarBytes[0], 0x50);
+  assert.equal(jarBytes[1], 0x4b);
+
   // Verify AndroidManifest uses <queries> instead of QUERY_ALL_PACKAGES
   const manifest = ANDROID_PROJECT_FILES['app/src/main/AndroidManifest.xml'];
   assert.ok(!manifest.includes('QUERY_ALL_PACKAGES'));
@@ -203,4 +231,5 @@ test('Android project generator includes all required Gradle, Manifest, Kotlin, 
   assert.ok(manifest.includes('android.intent.category.LEANBACK_LAUNCHER'));
   assert.ok(manifest.includes('android.intent.category.HOME'));
 });
+
 

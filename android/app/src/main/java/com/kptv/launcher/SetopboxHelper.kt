@@ -1,7 +1,6 @@
 package com.kptv.launcher
 
 import android.content.Context
-import android.content.Intent
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.os.Build
@@ -14,7 +13,7 @@ import androidx.appcompat.app.AlertDialog
  */
 object SetopboxHelper {
 
-    fun openSetopboxSelector(context: Context) {
+    fun openSetopboxSelector(context: Context, onDismissRestoreFocus: () -> Unit) {
         val hdmiInputs = detectDocumentedHdmiInputs(context)
 
         val options = arrayOf(
@@ -31,18 +30,21 @@ object SetopboxHelper {
                         showManualInstructionsDialog(
                             context,
                             hdmiInputs,
-                            "Direct HDMI switching is restricted by this TV firmware. No input was switched."
+                            "Direct HDMI switching is restricted by this TV firmware. No input was switched.",
+                            onDismissRestoreFocus
                         )
                     }
                 } else {
                     showManualInstructionsDialog(
                         context,
                         hdmiInputs,
-                        "How to switch to your Setopbox safely:"
+                        "How to switch to your Setopbox safely:",
+                        onDismissRestoreFocus
                     )
                 }
             }
             .setNegativeButton("Close", null)
+            .setOnDismissListener { onDismissRestoreFocus() }
             .show()
     }
 
@@ -86,7 +88,8 @@ object SetopboxHelper {
     private fun showManualInstructionsDialog(
         context: Context,
         detectedInputs: List<String>,
-        headerNote: String
+        headerNote: String,
+        onDismissRestoreFocus: () -> Unit
     ) {
         val detectedLine = if (detectedInputs.isNotEmpty()) {
             "Detected TV Inputs: ${detectedInputs.joinToString(", ")}\n\n"
@@ -107,6 +110,7 @@ object SetopboxHelper {
             .setTitle("Setopbox Manual HDMI Instructions")
             .setMessage(message)
             .setPositiveButton("OK", null)
+            .setOnDismissListener { onDismissRestoreFocus() }
             .show()
     }
 }

@@ -18,9 +18,10 @@
 - **Behavior**: KP TV first checks if a documented system TV Input activity (`com.android.tv` / `TvInputManager`) is accessible. If the firmware blocks third-party HDMI switching, KP TV **never pretends the input was switched**—instead, it displays clear manual instructions to press the physical **SOURCE / INPUT** button on your TV remote.
 
 ## 4. Live Cricket Score Shows "Live score service not configured."
-- **Cause**: Hardcoded demo scores have been removed so fake scores are never presented as live scores, and API keys are never hardcoded in source control.
-- **Solution**: Click the **Live Cricket Score** card, choose **Configure API**, and enter your CricAPI key (`https://api.cricapi.com/v1/currentMatches`) or set `VITE_CRICKET_API_KEY` in `.env.local`.
+- **Cause**: Hardcoded demo scores have been removed so fake scores are never presented as live scores, and private API keys are never exposed in frontend `VITE_*` variables or source control.
+- **Solution**: Set `CRICKET_API_URL` and `CRICKET_API_KEY` in `.env` on the server (proxied via `/api/cricket/matches`), or click the **Live Cricket Score** card in the launcher, choose **Configure API**, and enter your endpoint and key.
 
-## 5. Missing Resource / Gradle Plugin Errors in Android Studio
-- **Cause**: Previously, `gradle/libs.versions.toml`, `@drawable/tv_banner`, and `@mipmap/ic_launcher` were missing from the generated project.
-- **Fix Applied**: All Gradle version catalogs, adaptive icons, vector drawables, and TV banner resources are now generated and validated automatically.
+## 5. Missing Resource / Gradle Wrapper / Plugin Errors in Android Studio
+- **Cause**: Previously, `gradlew`, `gradlew.bat`, `gradle-wrapper.jar`, `gradle/libs.versions.toml`, `@drawable/tv_banner`, and `@mipmap/ic_launcher` were missing from the generated project.
+- **Fix Applied**: Official Gradle 8.4 wrapper files (`gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`), version catalogs, adaptive icons, vector drawables, and TV banner resources are now included and verified with `./gradlew assembleDebug`.
+

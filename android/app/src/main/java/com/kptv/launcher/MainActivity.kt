@@ -1,6 +1,9 @@
 package com.kptv.launcher
 
+import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
@@ -37,7 +40,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cricketService: CricketScoreService
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var clockJob: Job? = null
-    private var isClock24Hours = false
+    private var lastFocusedViewId: Int = R.id.card_live_tv
+
+    private val uiPrefs by lazy {
+        getSharedPreferences("kptv_ui_prefs", Context.MODE_PRIVATE)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,12 +54,15 @@ class MainActivity : AppCompatActivity() {
         appsRepo = InstalledAppsRepository(this)
         cricketService = CricketScoreService(this)
 
+        applySavedWallpaperPreset()
+        updateClockAndDateVisibility()
         setupLiveClockAndDate()
         setupDpadFocusAnimations()
         setupClickActions()
+        renderDynamicDock()
+        updateWifiStatusBadge()
         refreshCricketScoreCard()
 
-        // Default initial focus on Live TV Card
         binding.cardLiveTv.post {
             binding.cardLiveTv.requestFocus()
         }
@@ -60,6 +70,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        renderDynamicDock()
+        updateWifiStatusBadge()
         refreshCricketScoreCard()
     }
 
@@ -69,11 +81,18 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun isClock24Hours(): Boolean = uiPrefs.getBoolean("clock_24h", false)
+    private fun isDateVisible(): Boolean = uiPrefs.getBoolean("show_date", true)
+
+    private fun updateClockAndDateVisibility() {
+        binding.tvDate.visibility = if (isDateVisible()) View.VISIBLE else View.GONE
+    }
+
     private fun setupLiveClockAndDate() {
         clockJob = uiScope.launch {
             while (isActive) {
                 val now = Date()
-                val timePattern = if (isClock24Hours) "HH:mm" else "hh:mm a"
+                val timePattern = if (isClock24Hours()) "HH:mm" else "hh:mm a"
                 val timeFormat = SimpleDateFormat(timePattern, Locale.getDefault())
                 val dateFormat = SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault())
 
@@ -84,8 +103,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateWifiStatusBadge() {
+        val online = cricketService.isNetworkConnected()
+        binding.btnHeaderWifi.text = if (online) "Wi-Fi: Online" else "Wi-Fi: Offline"
+    }
+
     private fun setupDpadFocusAnimations() {
         val focusableViews = listOf(
+            binding.btnHeaderWallpaper,
             binding.btnHeaderWifi,
             binding.btnHeaderSettings,
             binding.btnHeaderNotifications,
@@ -106,6 +131,7 @@ class MainActivity : AppCompatActivity() {
         focusableViews.forEach { view ->
             view.setOnFocusChangeListener { v, hasFocus ->
                 if (hasFocus) {
+                    lastFocusedViewId = v.id
                     v.animate().scaleX(1.06f).scaleY(1.06f).setDuration(140).start()
                     v.elevation = 16f
                 } else {
@@ -116,9 +142,60 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun restoreLastFocus() {
+        val target = findViewById<View>(lastFocusedViewId) ?: binding.cardLiveTv
+        target.post { target.requestFocus() }
+    }
+
+    /**
+     * Dynamically binds the 4 Home Dock slots to the user's pinned/installed apps,
+     * falling back gracefully to preferred labels if an app is not yet installed.
+     */
+    private fun renderDynamicDock() {
+        val dockViews = listOf(
+            binding.dockNetmirror,
+            binding.dockHotstar,
+            binding.dockYoutube,
+            binding.dockAirtel
+        )
+        val fallbackLabels = listOf("NetMirror TV", "JioHotstar", "YouTube", "Airtel")
+        val fallbackGroups = InstalledAppsRepository.PREFERRED_DOCK_PACKAGES
+        val dockApps = appsRepo.getDockApps()
+
+        for (i in dockViews.indices) {
+            val slotView = dockViews[i]
+            val entry = dockApps.getOrNull(i)
+
+            if (entry != null) {
+                slotView.text = entry.label
+                slotView.setOnClickListener {
+                    if (!appsRepo.launchApp(entry)) {
+                        Toast.makeText(this, "Unable to launch ${entry.label}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                slotView.setOnLongClickListener {
+                    showRealAppDrawerDialog()
+                    true
+                }
+            } else {
+                val label = fallbackLabels[i]
+                val group = fallbackGroups[i]
+                slotView.text = label
+                slotView.setOnClickListener {
+                    launchPreferredOrNotify(group, label)
+                }
+                slotView.setOnLongClickListener {
+                    showRealAppDrawerDialog()
+                    true
+                }
+            }
+        }
+    }
+
     private fun setupClickActions() {
         // Header Buttons
-        binding.btnHeaderWifi.setOnClickListener { openWifiSettings() }
+        binding.btnHeaderWallpaper.setOnClickListener { showWallpaperSelectorDialog() }
+        binding.btnHeaderWifi.setOnClickListener { showWifiStatusDialog() }
         binding.btnHeaderSettings.setOnClickListener { openSystemOrLauncherSettings() }
         binding.btnHeaderNotifications.setOnClickListener { showDiagnosticsAndStatusDialog() }
 
@@ -130,55 +207,29 @@ class MainActivity : AppCompatActivity() {
 
         // 3 Hero Cards
         binding.cardLiveTv.setOnClickListener { launchLiveTvOrPlayer() }
-        binding.cardSetopbox.setOnClickListener { SetopboxHelper.openSetopboxSelector(this) }
+        binding.cardSetopbox.setOnClickListener {
+            SetopboxHelper.openSetopboxSelector(this) { restoreLastFocus() }
+        }
         binding.cardCricket.setOnClickListener { showCricketConfigDialog() }
 
-        // Preferred Dock Order:
-        // 1. NetMirror TV (only if already installed)
-        binding.dockNetmirror.setOnClickListener {
-            launchPreferredOrNotify(
-                InstalledAppsRepository.PREFERRED_DOCK_PACKAGES[0],
-                "NetMirror TV"
-            )
-        }
-        // 2. JioHotstar / Hotstar
-        binding.dockHotstar.setOnClickListener {
-            launchPreferredOrNotify(
-                InstalledAppsRepository.PREFERRED_DOCK_PACKAGES[1],
-                "JioHotstar"
-            )
-        }
-        // 3. YouTube
-        binding.dockYoutube.setOnClickListener {
-            launchPreferredOrNotify(
-                InstalledAppsRepository.PREFERRED_DOCK_PACKAGES[2],
-                "YouTube"
-            )
-        }
-        // 4. Airtel
-        binding.dockAirtel.setOnClickListener {
-            launchPreferredOrNotify(
-                InstalledAppsRepository.PREFERRED_DOCK_PACKAGES[3],
-                "Airtel Xstream"
-            )
-        }
-        // 5. More Apps (Real Application Drawer)
+        // 5th Dock Button: More Apps Drawer
         binding.dockMore.setOnClickListener {
             showRealAppDrawerDialog()
         }
     }
 
     private fun launchPreferredOrNotify(candidatePackages: List<String>, displayName: String) {
-        val launched = appsRepo.findAndLaunchFirstAvailable(candidatePackages)
+        val launched = appsRepo.findAndLaunchFirstAvailable(candidatePackages, displayName)
         if (!launched) {
             AlertDialog.Builder(this)
                 .setTitle("$displayName Not Installed")
                 .setMessage(
-                    "$displayName (${candidatePackages.first()}) was not found on this TV.\n\n" +
-                    "KP TV never automatically downloads unofficial APKs. You can open 'More Apps' to launch any installed application."
+                    "$displayName (${candidatePackages.first()}) is not currently installed on this TV.\n\n" +
+                    "KP TV never automatically downloads unofficial APKs. Select 'Open App Drawer' to launch or pin any installed application."
                 )
                 .setPositiveButton("Open App Drawer") { _, _ -> showRealAppDrawerDialog() }
                 .setNegativeButton("Close", null)
+                .setOnDismissListener { restoreLastFocus() }
                 .show()
         }
     }
@@ -191,7 +242,7 @@ class MainActivity : AppCompatActivity() {
             "com.mxtech.videoplayer.television",
             "com.mxtech.videoplayer.ad"
         )
-        val launched = appsRepo.findAndLaunchFirstAvailable(liveTvCandidates)
+        val launched = appsRepo.findAndLaunchFirstAvailable(liveTvCandidates, "tv")
         if (!launched) {
             showRealAppDrawerDialog()
         }
@@ -224,7 +275,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val keyInput = EditText(this).apply {
-            hint = "Enter CricAPI Key (kept out of source code)"
+            hint = "Enter CricAPI Key (saved in private device preferences)"
             setText(cricketService.getApiKey())
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
@@ -247,7 +298,45 @@ class MainActivity : AppCompatActivity() {
                 refreshCricketScoreCard()
             }
             .setNegativeButton("Cancel", null)
+            .setOnDismissListener { restoreLastFocus() }
             .show()
+    }
+
+    private fun showWallpaperSelectorDialog() {
+        val presetNames = arrayOf(
+            "1. KP TV Alpine Sunset (Default)",
+            "2. Nordic Aurora Night",
+            "3. Neon Cyber Grid",
+            "4. Galactic Deep Space",
+            "5. Amber Sunset Serenade",
+            "6. OLED Pure Minimal"
+        )
+        val currentIdx = uiPrefs.getInt("wallpaper_preset_index", 0)
+
+        AlertDialog.Builder(this)
+            .setTitle("Wallpaper Studio – Select TV Backdrop")
+            .setSingleChoiceItems(presetNames, currentIdx) { dialog, which ->
+                uiPrefs.edit().putInt("wallpaper_preset_index", which).apply()
+                applySavedWallpaperPreset()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Close", null)
+            .setOnDismissListener { restoreLastFocus() }
+            .show()
+    }
+
+    private fun applySavedWallpaperPreset() {
+        val presetIdx = uiPrefs.getInt("wallpaper_preset_index", 0)
+        val colors = when (presetIdx) {
+            1 -> intArrayOf(Color.parseColor("#021410"), Color.parseColor("#064E3B"), Color.parseColor("#022C22"))
+            2 -> intArrayOf(Color.parseColor("#050114"), Color.parseColor("#4C1D95"), Color.parseColor("#701A75"))
+            3 -> intArrayOf(Color.parseColor("#020617"), Color.parseColor("#1E1B4B"), Color.parseColor("#0F172A"))
+            4 -> intArrayOf(Color.parseColor("#1C0B02"), Color.parseColor("#7C2D12"), Color.parseColor("#0C0401"))
+            5 -> intArrayOf(Color.parseColor("#030712"), Color.parseColor("#030712"), Color.parseColor("#030712"))
+            else -> intArrayOf(Color.parseColor("#050A1C"), Color.parseColor("#1E1B4B"), Color.parseColor("#3B0764"))
+        }
+        val gd = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
+        binding.rootContainer.background = gd
     }
 
     private fun showRealAppDrawerDialog() {
@@ -256,12 +345,16 @@ class MainActivity : AppCompatActivity() {
         val recyclerView = dialogView.findViewById<RecyclerView>(R.id.rv_apps)
         val tvCount = dialogView.findViewById<TextView>(R.id.tv_app_count)
 
-        tvCount.text = "${installedApps.size} Installed Apps Detected"
+        tvCount.text = "${installedApps.size} Installed Apps • Long-press OK to Pin/Unpin Dock"
         recyclerView.layoutManager = GridLayoutManager(this, 4)
 
         val dialog = AlertDialog.Builder(this, R.style.Theme_KPTVLauncher)
             .setView(dialogView)
             .setNegativeButton("Back to Home", null)
+            .setOnDismissListener {
+                renderDynamicDock()
+                restoreLastFocus()
+            }
             .create()
 
         recyclerView.adapter = object : RecyclerView.Adapter<AppViewHolder>() {
@@ -294,9 +387,10 @@ class MainActivity : AppCompatActivity() {
 
                 holder.itemView.setOnLongClickListener {
                     val pinned = appsRepo.toggleDockPin(app.packageName)
+                    renderDynamicDock()
                     Toast.makeText(
                         this@MainActivity,
-                        if (pinned) "Pinned ${app.label} to Dock" else "Unpinned ${app.label}",
+                        if (pinned) "Pinned ${app.label} to Home Dock" else "Unpinned ${app.label}",
                         Toast.LENGTH_SHORT
                     ).show()
                     true
@@ -315,38 +409,60 @@ class MainActivity : AppCompatActivity() {
         val tvPackage: TextView = view.findViewById(R.id.tv_app_package)
     }
 
-    private fun openWifiSettings() {
-        try {
-            startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-        } catch (_: Exception) {
-            openSystemOrLauncherSettings()
-        }
+    private fun showWifiStatusDialog() {
+        val netSummary = DeviceDiagnosticsHelper.getNetworkStatusSummary(this)
+        AlertDialog.Builder(this)
+            .setTitle("Network & Wi-Fi Status")
+            .setMessage("Current Connection: $netSummary")
+            .setPositiveButton("Open System Wi-Fi Settings") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                } catch (_: Exception) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_SETTINGS))
+                    } catch (_: Exception) {}
+                }
+            }
+            .setNegativeButton("Close", null)
+            .setOnDismissListener { restoreLastFocus() }
+            .show()
     }
 
     private fun openSystemOrLauncherSettings() {
+        val clockLabel = if (isClock24Hours()) "Clock Format: 24-Hour (Switch to 12-Hour)" else "Clock Format: 12-Hour (Switch to 24-Hour)"
+        val dateLabel = if (isDateVisible()) "Date Display: Visible (Click to Hide)" else "Date Display: Hidden (Click to Show)"
+
         val options = arrayOf(
+            "Wallpaper Studio (Change TV Backdrop)",
+            clockLabel,
+            dateLabel,
             "Open Android TV System Settings",
-            "Toggle 12h / 24h Clock Format",
             "Device Diagnostics & Compatibility Report"
         )
         AlertDialog.Builder(this)
             .setTitle("KP TV Settings")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> {
+                    0 -> showWallpaperSelectorDialog()
+                    1 -> {
+                        uiPrefs.edit().putBoolean("clock_24h", !isClock24Hours()).apply()
+                    }
+                    2 -> {
+                        uiPrefs.edit().putBoolean("show_date", !isDateVisible()).apply()
+                        updateClockAndDateVisibility()
+                    }
+                    3 -> {
                         try {
                             startActivity(Intent(Settings.ACTION_SETTINGS))
                         } catch (_: Exception) {
                             Toast.makeText(this, "System settings unavailable", Toast.LENGTH_SHORT).show()
                         }
                     }
-                    1 -> {
-                        isClock24Hours = !isClock24Hours
-                    }
-                    2 -> showDiagnosticsAndStatusDialog()
+                    4 -> showDiagnosticsAndStatusDialog()
                 }
             }
             .setNegativeButton("Close", null)
+            .setOnDismissListener { restoreLastFocus() }
             .show()
     }
 
@@ -356,6 +472,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("KP TV – Smart TV Diagnostics & Safety")
             .setMessage(report)
             .setPositiveButton("OK", null)
+            .setOnDismissListener { restoreLastFocus() }
             .show()
     }
 

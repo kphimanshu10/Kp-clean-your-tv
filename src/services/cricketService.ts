@@ -7,104 +7,38 @@ export interface CricketFetchResult {
   lastUpdated: string | null;
 }
 
-const STORAGE_KEY = 'kptv_cricket_api_config';
+const STORAGE_ENDPOINT_KEY = 'kptv_cricket_api_endpoint';
 
+/**
+ * Returns the configured API endpoint URL (note: private API keys are never stored in frontend
+ * bundles or exposed via VITE_ environment variables; keys are managed by the backend proxy /api/cricket/*).
+ */
 export function getCricketApiConfig(): CricketApiConfig {
-  const envUrl = (import.meta.env.VITE_CRICKET_API_URL || '').trim();
-  const envKey = (import.meta.env.VITE_CRICKET_API_KEY || '').trim();
-
+  let savedEndpoint = 'https://api.cricapi.com/v1/currentMatches';
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved) as Partial<CricketApiConfig>;
-      return {
-        endpointUrl: (parsed.endpointUrl ?? envUrl) || 'https://api.cricapi.com/v1/currentMatches',
-        apiKey: (parsed.apiKey ?? envKey) || '',
-      };
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_ENDPOINT_KEY);
+      if (saved && saved.trim().length > 0) {
+        savedEndpoint = saved.trim();
+      }
     }
   } catch {
     // ignore storage errors
   }
 
   return {
-    endpointUrl: envUrl || 'https://api.cricapi.com/v1/currentMatches',
-    apiKey: envKey,
+    endpointUrl: savedEndpoint,
+    apiKey: '',
   };
 }
 
-export function saveCricketApiConfig(config: CricketApiConfig): void {
+export async function saveCricketApiConfig(config: CricketApiConfig): Promise<CricketFetchResult> {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        endpointUrl: config.endpointUrl.trim(),
-        apiKey: config.apiKey.trim(),
-      })
-    );
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_ENDPOINT_KEY, config.endpointUrl.trim());
+    }
   } catch {
     // ignore storage errors
-  }
-}
-
-interface CricApiScoreEntry {
-  r?: number;
-  w?: number;
-  o?: number;
-  inning?: string;
-}
-
-interface CricApiTeamInfo {
-  name?: string;
-  shortname?: string;
-  img?: string;
-}
-
-interface CricApiMatchItem {
-  id?: string;
-  name?: string;
-  matchType?: string;
-  status?: string;
-  venue?: string;
-  dateTimeGMT?: string;
-  teams?: string[];
-  teamInfo?: CricApiTeamInfo[];
-  score?: CricApiScoreEntry[];
-  matchStarted?: boolean;
-  matchEnded?: boolean;
-}
-
-function buildTeamCode(name: string, shortname?: string): string {
-  if (shortname && shortname.trim().length > 0) {
-    return shortname.trim().toUpperCase().slice(0, 4);
-  }
-  const clean = name.replace(/[^a-zA-Z ]/g, '').trim();
-  const words = clean.split(/\s+/);
-  if (words.length >= 2) {
-    return words.map(w => w[0]).join('').toUpperCase().slice(0, 4);
-  }
-  return clean.slice(0, 3).toUpperCase() || 'TM';
-}
-
-export async function fetchLiveCricketMatches(
-  configOverride?: CricketApiConfig
-): Promise<CricketFetchResult> {
-  const config = configOverride || getCricketApiConfig();
-  const endpoint = config.endpointUrl.trim();
-  const apiKey = config.apiKey.trim();
-
-  // Check if a legitimate API is configured first
-  const hasCustomDirectFeed =
-    endpoint.length > 0 &&
-    endpoint !== 'https://api.cricapi.com/v1/currentMatches' &&
-    !endpoint.includes('api.cricapi.com');
-
-  if (!apiKey && !hasCustomDirectFeed) {
-    return {
-      status: 'unconfigured',
-      matches: [],
-      errorMessage: 'Live score service not configured.',
-      lastUpdated: null,
-    };
   }
 
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -117,132 +51,112 @@ export async function fetchLiveCricketMatches(
   }
 
   try {
-    const requestUrl = new URL(endpoint);
-    if (apiKey && !requestUrl.searchParams.has('apikey')) {
-      requestUrl.searchParams.set('apikey', apiKey);
+    const res = await fetch('/api/cricket/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        endpointUrl: config.endpointUrl.trim(),
+        apiKey: config.apiKey.trim(),
+      }),
+    });
+    if (!res.ok) {
+      return {
+        status: 'error',
+        matches: [],
+        errorMessage: `Backend proxy error (HTTP ${res.status})`,
+        lastUpdated: new Date().toLocaleTimeString(),
+      };
     }
-    if (endpoint.includes('cricapi.com') && !requestUrl.searchParams.has('offset')) {
-      requestUrl.searchParams.set('offset', '0');
+    return (await res.json()) as CricketFetchResult;
+  } catch {
+    return fetchLiveCricketMatches(config);
+  }
+}
+
+export async function fetchLiveCricketMatches(
+  configOverride?: CricketApiConfig
+): Promise<CricketFetchResult> {
+  // If configOverride is explicitly passed (e.g., in unit tests or direct runtime validation)
+  if (configOverride) {
+    const endpoint = configOverride.endpointUrl.trim();
+    const apiKey = configOverride.apiKey.trim();
+    const hasCustomDirectFeed =
+      endpoint.length > 0 &&
+      endpoint !== 'https://api.cricapi.com/v1/currentMatches' &&
+      !endpoint.includes('api.cricapi.com');
+
+    if (!apiKey && !hasCustomDirectFeed) {
+      return {
+        status: 'unconfigured',
+        matches: [],
+        errorMessage: 'Live score service not configured.',
+        lastUpdated: null,
+      };
     }
+  }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return {
+      status: 'offline',
+      matches: [],
+      errorMessage: 'TV is currently offline. Check Wi-Fi or Ethernet connection.',
+      lastUpdated: new Date().toLocaleTimeString(),
+    };
+  }
 
-    const response = await fetch(requestUrl.toString(), {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch('/api/cricket/matches', {
       method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
+      headers: { Accept: 'application/json' },
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
 
+    if (response.status === 401 || response.status === 403) {
+      return {
+        status: 'error',
+        matches: [],
+        errorMessage: `Authentication error (HTTP ${response.status}): Invalid API credentials.`,
+        lastUpdated: new Date().toLocaleTimeString(),
+      };
+    }
+
+    if (response.status === 429) {
+      return {
+        status: 'error',
+        matches: [],
+        errorMessage: 'API quota exceeded (HTTP 429): Rate limit reached.',
+        lastUpdated: new Date().toLocaleTimeString(),
+      };
+    }
+
     if (!response.ok) {
       return {
         status: 'error',
         matches: [],
-        errorMessage: `API returned HTTP ${response.status} (${response.statusText || 'Error'})`,
+        errorMessage: `Proxy returned HTTP ${response.status}`,
         lastUpdated: new Date().toLocaleTimeString(),
       };
     }
 
-    const payload = await response.json();
-
-    if (payload && payload.status === 'failure') {
+    const data = (await response.json()) as CricketFetchResult;
+    if (!data || typeof data.status !== 'string') {
       return {
         status: 'error',
         matches: [],
-        errorMessage: payload.reason || 'Cricket API authentication or quota error.',
+        errorMessage: 'Invalid response from cricket score proxy.',
         lastUpdated: new Date().toLocaleTimeString(),
       };
     }
 
-    const rawList: CricApiMatchItem[] = Array.isArray(payload?.data)
-      ? payload.data
-      : Array.isArray(payload?.matches)
-      ? payload.matches
-      : Array.isArray(payload)
-      ? payload
-      : [];
-
-    if (rawList.length === 0) {
-      return {
-        status: 'error',
-        matches: [],
-        errorMessage: 'No active cricket matches returned by the configured API.',
-        lastUpdated: new Date().toLocaleTimeString(),
-      };
-    }
-
-    const nowFormatted = new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-
-    const parsedMatches: CricketMatch[] = rawList.slice(0, 9).map((item, idx) => {
-      const team1Name = item.teamInfo?.[0]?.name || item.teams?.[0] || 'Team 1';
-      const team2Name = item.teamInfo?.[1]?.name || item.teams?.[1] || 'Team 2';
-      const team1Code = buildTeamCode(team1Name, item.teamInfo?.[0]?.shortname);
-      const team2Code = buildTeamCode(team2Name, item.teamInfo?.[1]?.shortname);
-
-      const scores = Array.isArray(item.score) ? item.score : [];
-      const score1 = scores[0];
-      const score2 = scores[1];
-
-      const t1ScoreStr =
-        score1 && typeof score1.r === 'number'
-          ? `${score1.r}/${score1.w ?? 0}`
-          : 'Yet to bat';
-      const t1OversStr =
-        score1 && typeof score1.o === 'number' ? `(${score1.o} ov)` : '';
-
-      const t2ScoreStr =
-        score2 && typeof score2.r === 'number'
-          ? `${score2.r}/${score2.w ?? 0}`
-          : 'Yet to bat';
-      const t2OversStr =
-        score2 && typeof score2.o === 'number' ? `(${score2.o} ov)` : '';
-
-      const matchTypeUpper = (item.matchType || 'MATCH').toUpperCase();
-      const isLiveMatch = Boolean(item.matchStarted && !item.matchEnded);
-
-      return {
-        id: item.id || `live-match-${idx}`,
-        title: `${team1Code} vs ${team2Code}`,
-        series: item.name || `${matchTypeUpper} • ${isLiveMatch ? 'Live' : 'Match'}`,
-        matchType: matchTypeUpper,
-        isLive: isLiveMatch,
-        matchStatusText: item.status || 'Match in progress',
-        team1: {
-          name: team1Name,
-          code: team1Code,
-          score: t1ScoreStr,
-          overs: t1OversStr,
-          flag: '',
-        },
-        team2: {
-          name: team2Name,
-          code: team2Code,
-          score: t2ScoreStr,
-          overs: t2OversStr,
-          flag: '',
-        },
-        targetSummary: item.status || 'Live Match Update',
-        lastUpdated: nowFormatted,
-      };
-    });
-
-    return {
-      status: 'live',
-      matches: parsedMatches,
-      errorMessage: null,
-      lastUpdated: nowFormatted,
-    };
+    return data;
   } catch (err: unknown) {
-    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-    if (isOffline) {
+    clearTimeout(timeoutId);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return {
         status: 'offline',
         matches: [],
@@ -252,17 +166,15 @@ export async function fetchLiveCricketMatches(
     }
 
     const message =
-      err instanceof Error
-        ? err.name === 'AbortError'
-          ? 'Live score request timed out (10s).'
-          : err.message
-        : 'Unable to reach live cricket score service.';
+      err instanceof Error && err.name === 'AbortError'
+        ? 'Timeout error: Live score request timed out (10s).'
+        : 'Live score service not configured.';
 
     return {
-      status: 'error',
+      status: message === 'Live score service not configured.' ? 'unconfigured' : 'error',
       matches: [],
       errorMessage: message,
-      lastUpdated: new Date().toLocaleTimeString(),
+      lastUpdated: null,
     };
   }
 }

@@ -29,9 +29,10 @@
 
 ## Repository Structure
 
+- `/server.ts` — Express backend proxy (`/api/cricket/matches`, `/api/cricket/config`) that keeps private `CRICKET_API_KEY` credentials strictly on the server and out of frontend JavaScript bundles.
 - `/src/` — React 19 + TypeScript + Tailwind CSS + Vite interactive TV launcher & Android Studio ZIP generator.
-- `/android/` — Complete, standalone Android Studio project (`minSdk = 21`, `targetSdk = 34`, Kotlin + ViewBinding + Leanback + Android 11+ `<queries>` package visibility).
-- `WINDOWS_BUILD_GUIDE.md` — Step-by-step instructions to build the Debug and Release APKs on a Windows PC.
+- `/android/` — Complete, standalone Android Studio project (`minSdk = 21`, `targetSdk = 34`, Gradle 8.4 Wrapper `gradlew` / `gradlew.bat` / `gradle-wrapper.jar`, Kotlin + ViewBinding + Leanback + Android 11+ `<queries>` package visibility).
+- `WINDOWS_BUILD_GUIDE.md` — Step-by-step instructions to build the Debug and Release APKs on Windows or Linux.
 - `TV_INSTALLATION_GUIDE.md` — Instructions for installing KP TV on the Iconic 32-inch Smart TV via USB drive or ADB over Wi-Fi.
 - `TROUBLESHOOTING.md` — Solutions for Cloud TV OS quirks, remote focus, package visibility, and HDMI switching.
 - `STOCK_LAUNCHER_RECOVERY_GUIDE.md` — Safe rollback commands to restore the factory stock launcher at any time.
@@ -49,9 +50,18 @@ npm run build
 npm run dev
 ```
 
-## Live Cricket Score Configuration
+## Android Project Build Commands
 
-Keep API keys out of source code and public repositories. To enable live cricket scores:
-- Copy `.env.example` to `.env.local` and set `VITE_CRICKET_API_KEY="your_cricapi_key"`, **or**
-- Click the **Live Cricket Score** card inside the launcher and enter your API key in the **Configure API** panel (stored locally on your device only).
+```bash
+cd android
+./gradlew assembleDebug
+```
+Output APK: `android/app/build/outputs/apk/debug/app-debug.apk`
+
+## Live Cricket Score Configuration (Server-Side Proxy Security)
+
+Private API keys are **never** exposed in `VITE_*` frontend variables or bundled into client JavaScript:
+- Copy `.env.example` to `.env` (or `.env.local`) and set server-only `CRICKET_API_URL` and `CRICKET_API_KEY="your_cricapi_key"`, **or**
+- Click the **Live Cricket Score** card inside the launcher and enter a custom endpoint/key in the **Configure API** panel (forwarded securely via `/api/cricket/matches`).
 - When no API is configured, the card honestly displays: `"Live score service not configured."`
+

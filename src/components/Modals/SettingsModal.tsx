@@ -378,23 +378,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </p>
                   </div>
 
-                  <button
-                    onClick={handleDownloadAndroidZip}
-                    disabled={isExporting}
-                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold text-xs shadow-[0_0_25px_rgba(6,182,212,0.6)] flex items-center space-x-2 transition-all cursor-pointer"
-                  >
-                    {isExporting ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Compiling ZIP...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        <span>Download Android Studio ZIP</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2.5">
+                    <a
+                      href="/kp-tv-launcher-debug.apk"
+                      download="kp-tv-launcher-debug.apk"
+                      className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs shadow-[0_0_25px_rgba(16,185,129,0.5)] flex items-center space-x-2 transition-all cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download Built Debug APK (6.7 MB)</span>
+                    </a>
+                    <button
+                      onClick={handleDownloadAndroidZip}
+                      disabled={isExporting}
+                      className="px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold text-xs shadow-[0_0_25px_rgba(6,182,212,0.6)] flex items-center space-x-2 transition-all cursor-pointer"
+                    >
+                      {isExporting ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Compiling ZIP...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          <span>Download Android Studio ZIP</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {exportSuccess && (
@@ -412,8 +422,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/60 text-emerald-400">
                   adb connect &lt;TV_IP&gt;:5555<br />
-                  adb install -r kptv-launcher.apk<br />
-                  adb shell monkey -p com.kptv.launcher 1
+                  adb install -r android/app/build/outputs/apk/debug/app-debug.apk<br />
+                  adb shell am start -n com.kptv.launcher/.MainActivity
                 </div>
               </div>
             </div>

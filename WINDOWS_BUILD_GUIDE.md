@@ -1,6 +1,6 @@
-# Windows PC Build Guide — KP TV Smart TV Launcher APK
+# Windows & Linux Build Guide — KP TV Smart TV Launcher APK
 
-Because cloud web containers do not bundle the multi-gigabyte Android SDK / `aapt2` / JDK 17 build toolchain, follow these exact commands on your **Windows 10 / 11 PC** to compile the installable **Debug APK** and **Release APK** from the `/android` folder (or from the downloaded `KP_TV_Smart_Launcher_Android_Project.zip`).
+The repository's `/android` folder (and the downloadable `KP_TV_Smart_Launcher_Android_Project.zip`) includes the complete, official **Gradle 8.4 Wrapper** (`gradlew`, `gradlew.bat`, and `gradle/wrapper/gradle-wrapper.jar`) configured for **Android Gradle Plugin 8.2.2**, **Kotlin 1.9.22**, and **JDK 17**.
 
 ---
 
@@ -8,7 +8,7 @@ Because cloud web containers do not bundle the multi-gigabyte Android SDK / `aap
 
 1. **Install Android Studio** (Koala / Ladybug or newer):
    - Download from: `https://developer.android.com/studio`
-   - During setup, ensure **Android SDK**, **Android SDK Platform 34**, and **Android SDK Build-Tools** are checked.
+   - During setup, ensure **Android SDK**, **Android SDK Platform 34**, and **Android SDK Build-Tools 34.0.0** are checked.
 2. **Java Development Kit (JDK 17)**:
    - Android Studio includes an embedded JetBrains Runtime (JDK 17) at:
      `C:\Program Files\Android\Android Studio\jbr`
@@ -25,7 +25,7 @@ Because cloud web containers do not bundle the multi-gigabyte Android SDK / `aap
 5. Once complete, click **Locate** in the bottom-right notification pop-up.
 6. Your APK files will be located at:
    - **Debug APK**: `android\app\build\outputs\apk\debug\app-debug.apk`
-   - **Release APK**: `android\app\build\outputs\apk\release\app-release.apk`
+   - **Release APK**: `android\app\build\outputs\apk\release\app-release-unsigned.apk`
 
 ---
 
@@ -37,22 +37,32 @@ Open **PowerShell** on your Windows PC and run:
 # 1. Navigate to the Android project directory
 cd path\to\Kp-clean-your-tv\android
 
-# 2. Set JAVA_HOME to Android Studio's bundled JDK 17
+# 2. Set JAVA_HOME to Android Studio's bundled JDK 17 and ANDROID_HOME to your Android SDK
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
-# 3. Validate Gradle configuration and build Debug & Release APKs
-.\gradlew.bat assembleDebug assembleRelease
+# 3. Validate Gradle wrapper and build the installable Debug APK
+.\gradlew.bat --version
+.\gradlew.bat assembleDebug
 ```
 
-### Output APK Locations:
-- **Debug APK**: `android\app\build\outputs\apk\debug\app-debug.apk`
-- **Release APK**: `android\app\build\outputs\apk\release\app-release.apk`
+### Linux / macOS Terminal Commands:
+
+```bash
+cd android
+chmod +x gradlew
+./gradlew --version
+./gradlew assembleDebug
+```
+
+### Output APK Location:
+- **Debug APK**: `android/app/build/outputs/apk/debug/app-debug.apk`
 
 ---
 
 ## 4. Verify APK Signature & Manifest (Optional)
 
 ```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\build-tools\34.0.0\apkanalyzer.bat" manifest print app\build\outputs\apk\release\app-release.apk
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\34.0.0\apkanalyzer.bat" manifest print app\build\outputs\apk\debug\app-debug.apk
 ```
+

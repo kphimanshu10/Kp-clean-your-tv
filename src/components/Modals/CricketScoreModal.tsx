@@ -46,10 +46,10 @@ export const CricketScoreModal: React.FC<CricketScoreModalProps> = ({
       endpointUrl: endpointUrl.trim() || 'https://api.cricapi.com/v1/currentMatches',
       apiKey: apiKey.trim(),
     };
-    saveCricketApiConfig(newConfig);
-    setSavedNotice('API configuration saved locally to device storage.');
+    await saveCricketApiConfig(newConfig);
+    setSavedNotice('API credentials sent securely to backend proxy.');
     setTimeout(() => setSavedNotice(null), 3000);
-    await onRefresh(newConfig);
+    await onRefresh();
   };
 
   const handleClearConfig = async () => {
@@ -59,7 +59,7 @@ export const CricketScoreModal: React.FC<CricketScoreModalProps> = ({
     };
     setEndpointUrl(emptyConfig.endpointUrl);
     setApiKey('');
-    saveCricketApiConfig(emptyConfig);
+    await saveCricketApiConfig(emptyConfig);
     await onRefresh(emptyConfig);
   };
 
@@ -87,7 +87,7 @@ export const CricketScoreModal: React.FC<CricketScoreModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-400">
-                Real-time cricket score integration (Zero hardcoded demo scores)
+                Secure server-side proxy integration (Zero hardcoded demo scores)
               </p>
             </div>
           </div>
@@ -132,7 +132,7 @@ export const CricketScoreModal: React.FC<CricketScoreModalProps> = ({
                 Live score service not configured.
               </h3>
               <p className="text-xs text-slate-300 max-w-lg leading-relaxed">
-                KP TV never displays fake or sample scores as real-time scores. Enter your legitimate CricAPI key or custom JSON feed URL below (or set <code className="text-cyan-300">VITE_CRICKET_API_KEY</code> in <code className="text-cyan-300">.env.local</code>) to enable real-time match tracking.
+                KP TV never displays fake or sample scores as real-time scores, and never embeds private keys in frontend JavaScript bundles. Configure <code className="text-cyan-300">CRICKET_API_KEY</code> on the server or enter your key below to configure the backend proxy.
               </p>
             </div>
           )}

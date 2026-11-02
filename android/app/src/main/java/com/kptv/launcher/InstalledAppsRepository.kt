@@ -9,18 +9,19 @@ import android.content.pm.ResolveInfo
 /**
  * Discovers real installed launchable applications on Android TV / Cloud TV OS.
  * Supports both CATEGORY_LEANBACK_LAUNCHER and standard CATEGORY_LAUNCHER.
- * Never automatically downloads unofficial APKs or uninstalls existing apps.
+ * Does not depend exclusively on hardcoded package names: dynamically discovers all
+ * launchable activities and persists user dock customization in SharedPreferences.
  */
 class InstalledAppsRepository(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("kptv_dock_prefs", Context.MODE_PRIVATE)
 
     companion object {
-        // Preferred Dock Order per specification:
-        // 1. NetMirror TV (only if already installed and trusted)
+        // Preferred default priority when initialising dock if present on the TV:
+        // 1. NetMirror TV (only if already installed)
         // 2. JioHotstar / Hotstar
         // 3. YouTube
-        // 4. Airtel (if installed)
+        // 4. Airtel
         val PREFERRED_DOCK_PACKAGES = listOf(
             listOf("com.netmirror.app", "com.netmirror.tv"),
             listOf("in.startv.hotstar.dplus", "in.startv.hotstar", "com.hotstar.tv"),
@@ -40,13 +41,13 @@ class InstalledAppsRepository(private val context: Context) {
         }
         val leanbackResolved = queryIntentSafe(pm, leanbackIntent)
 
-        // 2. Query standard Launcher apps (critical for Cloud TV OS where many apps use standard CATEGORY_LAUNCHER)
+        // 2. Query standard Launcher apps (critical for Cloud TV OS where apps use standard CATEGORY_LAUNCHER)
         val standardIntent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
         val standardResolved = queryIntentSafe(pm, standardIntent)
 
-        val customPinnedSet = prefs.getStringSet("pinned_packages", null)
+        val orderedPinnedList = getSavedPinnedOrder()
 
         for (info in (leanbackResolved + standardResolved)) {
             val activityInfo = info.activityInfo ?: continue
@@ -60,11 +61,17 @@ class InstalledAppsRepository(private val context: Context) {
                 null
             }
 
-            val priority = getPreferredDockPriority(pkg)
-            val isPinned = if (customPinnedSet != null) {
-                customPinnedSet.contains(pkg)
+            val priority = getPreferredDockPriority(pkg, label)
+            val isPinned = if (orderedPinnedList != null) {
+                orderedPinnedList.contains(pkg)
             } else {
                 priority < 10
+            }
+
+            val effectiveOrder = if (orderedPinnedList != null && orderedPinnedList.contains(pkg)) {
+                orderedPinnedList.indexOf(pkg)
+            } else {
+                priority
             }
 
             discovered[pkg] = AppEntry(
@@ -73,7 +80,7 @@ class InstalledAppsRepository(private val context: Context) {
                 activityName = activityInfo.name,
                 icon = icon,
                 isPinnedToDock = isPinned,
-                dockPriority = priority
+                dockPriority = effectiveOrder
             )
         }
 
@@ -82,27 +89,44 @@ class InstalledAppsRepository(private val context: Context) {
         )
     }
 
+    /**
+     * Returns up to 4 apps for the Home Screen Dock.
+     * Uses user-customized pinned apps first, then preferred apps if installed,
+     * and dynamically falls back to other installed apps on the TV so the dock is never broken.
+     */
     fun getDockApps(): List<AppEntry> {
-        return getAllInstalledApps()
-            .filter { it.isPinnedToDock }
+        val all = getAllInstalledApps()
+        val pinned = all.filter { it.isPinnedToDock }
             .sortedWith(compareBy<AppEntry> { it.dockPriority }.thenBy { it.label.lowercase() })
-            .take(5)
+
+        if (pinned.size >= 4) {
+            return pinned.take(4)
+        }
+
+        val remaining = all.filter { !it.isPinnedToDock }
+        return (pinned + remaining).take(4)
     }
 
     fun toggleDockPin(packageName: String): Boolean {
-        val currentApps = getAllInstalledApps()
-        val currentSet = prefs.getStringSet("pinned_packages", null)?.toMutableSet()
-            ?: currentApps.filter { it.isPinnedToDock }.map { it.packageName }.toMutableSet()
-
-        val nowPinned = if (currentSet.contains(packageName)) {
-            currentSet.remove(packageName)
+        val currentDock = getDockApps().map { it.packageName }.toMutableList()
+        val nowPinned = if (currentDock.contains(packageName)) {
+            currentDock.remove(packageName)
             false
         } else {
-            currentSet.add(packageName)
+            currentDock.add(0, packageName)
             true
         }
-        prefs.edit().putStringSet("pinned_packages", currentSet).apply()
+        savePinnedOrder(currentDock.take(4))
         return nowPinned
+    }
+
+    private fun getSavedPinnedOrder(): List<String>? {
+        val raw = prefs.getString("pinned_order_csv", null) ?: return null
+        return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    private fun savePinnedOrder(packages: List<String>) {
+        prefs.edit().putString("pinned_order_csv", packages.joinToString(",")).apply()
     }
 
     fun launchApp(entry: AppEntry): Boolean {
@@ -134,23 +158,38 @@ class InstalledAppsRepository(private val context: Context) {
         return false
     }
 
-    fun findAndLaunchFirstAvailable(candidates: List<String>): Boolean {
-        val installed = getAllInstalledApps().associateBy { it.packageName }
+    fun findAndLaunchFirstAvailable(candidates: List<String>, keywordFallback: String? = null): Boolean {
+        val allApps = getAllInstalledApps()
+        val byPkg = allApps.associateBy { it.packageName }
         for (pkg in candidates) {
-            val match = installed[pkg]
+            val match = byPkg[pkg]
             if (match != null && launchApp(match)) {
+                return true
+            }
+        }
+        if (!keywordFallback.isNullOrEmpty()) {
+            val byLabel = allApps.firstOrNull {
+                it.label.contains(keywordFallback, ignoreCase = true) ||
+                it.packageName.contains(keywordFallback, ignoreCase = true)
+            }
+            if (byLabel != null && launchApp(byLabel)) {
                 return true
             }
         }
         return false
     }
 
-    private fun getPreferredDockPriority(packageName: String): Int {
+    private fun getPreferredDockPriority(packageName: String, label: String): Int {
         PREFERRED_DOCK_PACKAGES.forEachIndexed { index, group ->
             if (group.any { it.equals(packageName, ignoreCase = true) }) {
                 return index
             }
         }
+        val lowerLabel = label.lowercase()
+        if (lowerLabel.contains("netmirror")) return 0
+        if (lowerLabel.contains("hotstar")) return 1
+        if (lowerLabel.contains("youtube")) return 2
+        if (lowerLabel.contains("airtel")) return 3
         return 50
     }
 

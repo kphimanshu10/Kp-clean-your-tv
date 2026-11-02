@@ -31,9 +31,9 @@ Before setting any launcher as default, verify your Iconic TV's environment:
      adb shell wm size
      adb shell cat /proc/meminfo | findstr MemTotal
      ```
-   - Install the APK:
+   - Install the Debug APK:
      ```powershell
-     adb install -r app\build\outputs\apk\release\app-release.apk
+     adb install -r android\app\build\outputs\apk\debug\app-debug.apk
      ```
 
 ---

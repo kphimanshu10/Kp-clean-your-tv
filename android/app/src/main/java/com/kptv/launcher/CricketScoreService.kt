@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -31,8 +32,7 @@ data class CricketScoreState(
 
 /**
  * Legitimate Live Cricket Score Service.
- * Never displays hardcoded sample scores as real-time scores.
- * Shows "Live score service not configured." until a valid API key/endpoint is configured.
+ * Handles unconfigured, offline, timeout, invalid response, quota, and authentication errors.
  */
 class CricketScoreService(private val context: Context) {
 
@@ -52,22 +52,6 @@ class CricketScoreService(private val context: Context) {
 
     suspend fun fetchLiveScore(): CricketScoreState = withContext(Dispatchers.IO) {
         val nowTime = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
-
-        if (!isNetworkConnected()) {
-            return@withContext CricketScoreState(
-                status = "offline",
-                matchTitle = "Live Cricket Score",
-                matchSubtitle = "Network Offline",
-                team1Code = "---",
-                team1Score = "--/--",
-                team1Overs = "",
-                team2Code = "---",
-                team2Score = "--/--",
-                team2Overs = "",
-                summaryBanner = "TV Offline • Check Wi-Fi Connection",
-                lastUpdated = nowTime
-            )
-        }
 
         val apiKey = getApiKey()
         val apiUrl = getApiUrl()
@@ -89,6 +73,22 @@ class CricketScoreService(private val context: Context) {
             )
         }
 
+        if (!isNetworkConnected()) {
+            return@withContext CricketScoreState(
+                status = "offline",
+                matchTitle = "Live Cricket Score",
+                matchSubtitle = "Network Offline",
+                team1Code = "---",
+                team1Score = "--/--",
+                team1Overs = "",
+                team2Code = "---",
+                team2Score = "--/--",
+                team2Overs = "",
+                summaryBanner = "TV Offline • Check Wi-Fi Connection",
+                lastUpdated = nowTime
+            )
+        }
+
         try {
             val fullUrl = if (apiKey.isNotEmpty() && !apiUrl.contains("apikey=")) {
                 val sep = if (apiUrl.contains("?")) "&" else "?"
@@ -105,19 +105,27 @@ class CricketScoreService(private val context: Context) {
             }
 
             val code = conn.responseCode
+            if (code == 401 || code == 403) {
+                return@withContext errorState("Authentication error (HTTP $code)", nowTime)
+            }
+            if (code == 429) {
+                return@withContext errorState("Quota exceeded (HTTP 429)", nowTime)
+            }
             if (code != 200) {
                 return@withContext errorState("HTTP $code from score service", nowTime)
             }
 
             val reader = BufferedReader(InputStreamReader(conn.inputStream))
             val body = reader.use { it.readText() }
-            val json = JSONObject(body)
+            val json = try {
+                JSONObject(body)
+            } catch (_: Exception) {
+                return@withContext errorState("Invalid JSON response from server", nowTime)
+            }
 
             if (json.optString("status") == "failure") {
-                return@withContext errorState(
-                    json.optString("reason", "API key or quota error"),
-                    nowTime
-                )
+                val reason = json.optString("reason", "API error")
+                return@withContext errorState(reason, nowTime)
             }
 
             val dataArr = json.optJSONArray("data")
@@ -157,6 +165,8 @@ class CricketScoreService(private val context: Context) {
                 summaryBanner = statusText,
                 lastUpdated = nowTime
             )
+        } catch (_: SocketTimeoutException) {
+            errorState("Request timed out (8s)", nowTime)
         } catch (e: Exception) {
             errorState(e.localizedMessage ?: "Network error", nowTime)
         }
@@ -176,7 +186,7 @@ class CricketScoreService(private val context: Context) {
         lastUpdated = timestamp
     )
 
-    private fun isNetworkConnected(): Boolean {
+    fun isNetworkConnected(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return false
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
