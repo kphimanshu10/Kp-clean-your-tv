@@ -144,6 +144,8 @@ export interface AndroidTvBridgeInterface {
   getDeviceDiagnostics?: () => string;
   openSystemSettings?: () => boolean;
   openWifiSettings?: () => boolean;
+  getIptvQrUrl?: () => string;
+  getLatestIptvUrl?: () => string;
 }
 
 declare global {

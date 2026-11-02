@@ -1,6 +1,7 @@
 package com.kptv.launcher
 
 import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
@@ -20,23 +21,32 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kptv.launcher.databinding.ActivityMainBinding
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
 import java.net.URLConnection
+import java.net.URLDecoder
 
 /**
  * KP TV – Smart TV Launcher MainActivity.
- * Renders the full production KP TV web application inside a hardware-accelerated,
- * edge-to-edge 16:9 landscape WebView while bridging real Android TV / Cloud TV OS
- * package discovery, app launching, HDMI input helpers, Wi-Fi status, and D-pad keys.
+ * Renders the KP TV launcher interface in an edge-to-edge 16:9 landscape WebView
+ * while bridging real Android TV / Cloud TV OS package discovery, app launching,
+ * direct Setopbox HDMI/AV source switching, local Wi-Fi QR IPTV paste server,
+ * native Device Settings, and physical remote control keys.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var appsRepo: InstalledAppsRepository
     private lateinit var cricketService: CricketScoreService
+    @Volatile
+    private var latestIptvUrl: String = ""
+    private var qrServerSocket: ServerSocket? = null
 
     companion object {
         private const val LOCAL_HOST = "kptv.local"
         private const val START_URL = "https://kptv.local/index.html"
+        private const val QR_SERVER_PORT = 8765
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +59,7 @@ class MainActivity : AppCompatActivity() {
         appsRepo = InstalledAppsRepository(this)
         cricketService = CricketScoreService(this)
 
+        startLocalIptvQrServer()
         setupWebView()
         if (savedInstanceState == null) {
             binding.kpTvWebview.loadUrl(START_URL)
@@ -83,9 +94,96 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        try {
+            qrServerSocket?.close()
+        } catch (_: Exception) {
+        }
         binding.kpTvWebview.stopLoading()
         binding.kpTvWebview.destroy()
         super.onDestroy()
+    }
+
+    private fun startLocalIptvQrServer() {
+        Thread {
+            try {
+                val server = ServerSocket(QR_SERVER_PORT)
+                qrServerSocket = server
+                while (!server.isClosed) {
+                    val client = server.accept() ?: continue
+                    Thread {
+                        try {
+                            client.soTimeout = 5000
+                            val reader = BufferedReader(InputStreamReader(client.getInputStream()))
+                            val requestLine = reader.readLine() ?: ""
+                            var contentLength = 0
+                            var line = reader.readLine()
+                            while (!line.isNullOrEmpty()) {
+                                if (line.lowercase().startsWith("content-length:")) {
+                                    contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                                }
+                                line = reader.readLine()
+                            }
+
+                            if (requestLine.startsWith("POST")) {
+                                val bodyChars = CharArray(contentLength)
+                                var readTotal = 0
+                                while (readTotal < contentLength) {
+                                    val r = reader.read(bodyChars, readTotal, contentLength - readTotal)
+                                    if (r <= 0) break
+                                    readTotal += r
+                                }
+                                val bodyStr = String(bodyChars, 0, readTotal)
+                                val rawUrl = if (bodyStr.contains("playlistUrl=")) {
+                                    URLDecoder.decode(bodyStr.substringAfter("playlistUrl=").substringBefore("&"), "UTF-8")
+                                } else {
+                                    bodyStr.trim()
+                                }
+                                if (rawUrl.startsWith("http")) {
+                                    latestIptvUrl = rawUrl
+                                    runOnUiThread {
+                                        val safeUrl = rawUrl.replace("'", "")
+                                        binding.kpTvWebview.evaluateJavascript(
+                                            "window.dispatchEvent(new CustomEvent('kptv-iptv-url', { detail: '$safeUrl' }));",
+                                            null
+                                        )
+                                    }
+                                }
+                            }
+
+                            val html = buildMobileIptvHtml(latestIptvUrl.isNotEmpty() && requestLine.startsWith("POST"))
+                            val bytes = html.toByteArray(Charsets.UTF_8)
+                            val out = client.getOutputStream()
+                            val header = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n"
+                            out.write(header.toByteArray(Charsets.UTF_8))
+                            out.write(bytes)
+                            out.flush()
+                        } catch (_: Exception) {
+                        } finally {
+                            try {
+                                client.close()
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }.start()
+                }
+            } catch (_: Exception) {
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun buildMobileIptvHtml(submitted: Boolean): String {
+        val banner = if (submitted) {
+            "<div style='margin-top:14px;padding:12px;border-radius:12px;background:#064e3b;color:#6ee7b7;font-weight:bold;text-align:center;'>Sent to KP TV! Check your TV screen.</div>"
+        } else ""
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>KP TV IPTV</title></head>" +
+            "<body style='margin:0;min-height:100vh;background:#030712;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;'>" +
+            "<div style='width:100%;max-width:400px;background:#0f172a;border:1px solid #38bdf8;border-radius:20px;padding:22px;'>" +
+            "<h2 style='margin:0 0 8px;'>KP TV – Send IPTV Link</h2>" +
+            "<p style='font-size:13px;color:#94a3b8;margin:0 0 16px;'>Paste your M3U / M3U8 IPTV playlist link below and tap Send to load it on your TV.</p>" +
+            "<form method='POST' action='/iptv'>" +
+            "<input name='playlistUrl' type='url' placeholder='https://.../playlist.m3u' required style='width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #334155;background:#020617;color:#fff;margin-bottom:14px;'/>" +
+            "<button type='submit' style='width:100%;padding:13px;border-radius:12px;border:none;background:#0284c7;color:#fff;font-weight:bold;font-size:15px;'>Send Playlist to KP TV</button>" +
+            "</form>" + banner + "</div></body></html>"
     }
 
     private fun enableImmersiveFullscreen() {
@@ -184,6 +282,7 @@ class MainActivity : AppCompatActivity() {
             if (event.repeatCount > 0 && (
                     keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
                     keyCode == KeyEvent.KEYCODE_ENTER ||
+                    keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
                     keyCode == KeyEvent.KEYCODE_BACK
                 )
             ) {
@@ -195,7 +294,9 @@ class MainActivity : AppCompatActivity() {
                 KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown"
                 KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft"
                 KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight"
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> "Enter"
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> "Enter"
                 KeyEvent.KEYCODE_BACK -> "Escape"
                 KeyEvent.KEYCODE_HOME -> "Home"
                 else -> null
@@ -233,6 +334,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun getIptvQrUrl(): String {
+            val ip = DeviceDiagnosticsHelper.getLocalIpv4Address() ?: return ""
+            return "http://$ip:$QR_SERVER_PORT/iptv"
+        }
+
+        @JavascriptInterface
+        fun getLatestIptvUrl(): String {
+            return latestIptvUrl
+        }
+
+        @JavascriptInterface
         fun saveCricketConfig(endpointUrl: String, apiKey: String): Boolean {
             cricketService.saveApiConfig(endpointUrl, apiKey)
             return true
@@ -262,7 +374,16 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
                 true
             } catch (_: Exception) {
-                false
+                try {
+                    val tvSettings = Intent().apply {
+                        component = ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(tvSettings)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
             }
         }
 

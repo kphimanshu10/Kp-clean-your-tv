@@ -69,7 +69,7 @@ object DeviceDiagnosticsHelper {
         return obj.toString()
     }
 
-    private fun getLocalIpv4Address(): String? {
+    fun getLocalIpv4Address(): String? {
         return try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {

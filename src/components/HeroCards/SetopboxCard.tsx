@@ -1,25 +1,40 @@
 import React from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Settings2 } from 'lucide-react';
 
 interface SetopboxCardProps {
   isFocused: boolean;
+  selectedPort?: 'hdmi1' | 'hdmi2' | 'av';
   onSelect: () => void;
+  onConfigureSource?: () => void;
 }
 
-export const SetopboxCard: React.FC<SetopboxCardProps> = ({ isFocused, onSelect }) => {
+export const SetopboxCard: React.FC<SetopboxCardProps> = ({
+  isFocused,
+  selectedPort = 'hdmi1',
+  onSelect,
+  onConfigureSource,
+}) => {
+  const portLabel =
+    selectedPort === 'hdmi2'
+      ? 'HDMI 2 / DTH Input'
+      : selectedPort === 'av'
+      ? 'AV / RCA Input'
+      : 'HDMI 1 / DTH Input';
+
   return (
     <div
       onClick={onSelect}
       role="button"
       tabIndex={0}
-      aria-label="Open Setopbox HDMI Input"
+      aria-label={`Open Setopbox ${portLabel}`}
       className={`relative flex-1 min-w-[280px] h-64 rounded-3xl p-6 flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-300 select-none ${
         isFocused
           ? 'ring-4 ring-cyan-400 shadow-[0_0_40px_rgba(217,70,239,0.9)] scale-[1.03] z-20'
           : 'shadow-[0_10px_30px_rgba(168,85,247,0.35)] hover:scale-[1.01]'
       }`}
       style={{
-        background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.9) 0%, rgba(168, 85, 247, 0.85) 45%, rgba(45, 10, 80, 0.95) 100%)',
+        background:
+          'linear-gradient(135deg, rgba(236, 72, 153, 0.9) 0%, rgba(168, 85, 247, 0.85) 45%, rgba(45, 10, 80, 0.95) 100%)',
         backdropFilter: 'blur(20px)',
         border: '1px solid rgba(244, 114, 182, 0.45)',
       }}
@@ -37,9 +52,8 @@ export const SetopboxCard: React.FC<SetopboxCardProps> = ({ isFocused, onSelect 
 
             {/* Front Panel */}
             <div className="w-full flex items-center justify-between px-2 pt-2">
-              {/* Brand logo on hardware */}
-              <span className="text-[8px] font-bold tracking-widest text-slate-500 uppercase">
-                HD SETOP
+              <span className="text-[8px] font-bold tracking-widest text-slate-400 uppercase">
+                {selectedPort.toUpperCase()} READY
               </span>
 
               {/* Glowing Blue Power LED indicator */}
@@ -58,18 +72,15 @@ export const SetopboxCard: React.FC<SetopboxCardProps> = ({ isFocused, onSelect 
 
           {/* Realistic Sleek Remote Control resting next to / over it */}
           <div className="relative -ml-4 -mt-3 w-14 h-24 rounded-2xl bg-gradient-to-b from-slate-800 to-slate-950 border border-slate-600 shadow-[0_10px_20px_rgba(0,0,0,0.8)] p-1.5 flex flex-col justify-between transform rotate-6 hover:rotate-3 transition-transform duration-300">
-            {/* IR Emitter / Power Button */}
             <div className="flex justify-between items-center px-1">
               <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]" />
               <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
             </div>
 
-            {/* Remote D-Pad Circular Ring */}
             <div className="w-8 h-8 mx-auto rounded-full bg-slate-900 border border-slate-600 flex items-center justify-center my-1">
               <div className="w-3.5 h-3.5 rounded-full bg-cyan-500/80" />
             </div>
 
-            {/* Numeric & Color Keypad Grid */}
             <div className="grid grid-cols-3 gap-0.5 px-0.5 pb-1">
               {[...Array(6)].map((_, idx) => (
                 <div key={idx} className="h-1 rounded-sm bg-slate-700/80" />
@@ -85,15 +96,26 @@ export const SetopboxCard: React.FC<SetopboxCardProps> = ({ isFocused, onSelect 
           Setopbox
         </h2>
         <span className="text-sm font-semibold text-pink-100/90 tracking-wide mt-0.5">
-          Watch Setopbox
+          Watch Setopbox ({selectedPort.toUpperCase()})
         </span>
       </div>
 
       {/* Bottom Action Row */}
       <div className="relative z-10 flex items-center justify-between mt-auto">
-        <span className="text-xs font-semibold text-pink-200/90 bg-black/30 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
-          HDMI 1 / DTH Input
-        </span>
+        <button
+          type="button"
+          onClick={e => {
+            if (onConfigureSource) {
+              e.stopPropagation();
+              onConfigureSource();
+            }
+          }}
+          title="Change Setopbox Source (HDMI 1 / HDMI 2 / AV)"
+          className="text-xs font-semibold text-pink-100 bg-black/35 hover:bg-black/55 px-3 py-1.5 rounded-full border border-white/15 backdrop-blur-md flex items-center space-x-1.5 transition-colors cursor-pointer"
+        >
+          <span>{portLabel}</span>
+          <Settings2 className="w-3.5 h-3.5 text-pink-200" />
+        </button>
 
         {/* Circular Arrow Button with Purple Glow */}
         <div className="w-10 h-10 rounded-full bg-purple-900/60 border border-pink-400/60 flex items-center justify-center shadow-[0_0_15px_rgba(217,70,239,0.5)] transition-transform duration-200 group-hover:scale-110">

@@ -56,9 +56,13 @@ class InstalledAppsRepository(private val context: Context) {
 
             val label = info.loadLabel(pm)?.toString()?.trim().takeUnless { it.isNullOrEmpty() } ?: pkg
             val icon = try {
-                info.loadIcon(pm)
+                pm.getApplicationIcon(pkg)
             } catch (_: Exception) {
-                null
+                try {
+                    info.loadIcon(pm)
+                } catch (_: Exception) {
+                    pm.defaultActivityIcon
+                }
             }
 
             val priority = getPreferredDockPriority(pkg, label)

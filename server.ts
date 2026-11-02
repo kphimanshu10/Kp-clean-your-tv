@@ -276,11 +276,15 @@ export async function proxyFetchCricketMatches(configOverride?: {
   }
 }
 
+// Mobile QR IPTV Paste Sessions (allows scanning QR code on mobile phone to send IPTV playlist link to TV)
+const iptvQrSessions = new Map<string, { playlistUrl: string; updatedAt: number }>();
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   // Check current backend proxy configuration status (never returns raw API key)
   app.get('/api/cricket/config', (_req, res) => {
@@ -310,6 +314,127 @@ async function startServer() {
     res.json(result);
   });
 
+  // Mobile QR Scan Landing Page: User scans QR on TV with phone -> pastes IPTV playlist link -> sends to TV
+  app.get('/iptv-remote/:sessionId', (req, res) => {
+    const sessionId = String(req.params.sessionId || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>KP TV – Paste IPTV Playlist Link</title>
+  <style>
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body { margin: 0; min-height: 100vh; background: #030712; color: #f8fafc; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { width: 100%; max-width: 420px; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+    .badge { display: inline-block; background: rgba(2, 132, 199, 0.25); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; margin-bottom: 12px; letter-spacing: 0.05em; }
+    h1 { margin: 0 0 6px; font-size: 22px; font-weight: 900; }
+    p { margin: 0 0 18px; font-size: 13px; color: #94a3b8; line-height: 1.45; }
+    label { display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 8px; }
+    input { width: 100%; padding: 14px; border-radius: 14px; border: 1px solid #334155; background: #020617; color: #fff; font-size: 14px; outline: none; margin-bottom: 16px; }
+    input:focus { border-color: #38bdf8; }
+    button { width: 100%; padding: 14px; border-radius: 14px; border: none; background: linear-gradient(135deg, #0284c7, #2563eb); color: #fff; font-size: 15px; font-weight: 800; cursor: pointer; }
+    .msg { margin-top: 14px; padding: 12px; border-radius: 12px; font-size: 13px; font-weight: 700; display: none; text-align: center; }
+    .ok { display: block; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.5); color: #6ee7b7; }
+    .err { display: block; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.5); color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">KP TV • REMOTE IPTV PASTE</span>
+    <h1>Send IPTV Link to TV</h1>
+    <p>Paste your M3U / M3U8 IPTV playlist link below and tap Send. Your KP TV Launcher will load the playlist automatically.</p>
+    <form id="iptvForm">
+      <label for="playlistUrl">IPTV Playlist Link (.m3u / .m3u8)</label>
+      <input id="playlistUrl" name="playlistUrl" type="url" placeholder="https://.../playlist.m3u" required autofocus />
+      <button type="submit">Send Playlist to KP TV</button>
+    </form>
+    <div id="statusMsg" class="msg"></div>
+  </div>
+  <script>
+    const form = document.getElementById('iptvForm');
+    const statusMsg = document.getElementById('statusMsg');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('playlistUrl').value.trim();
+      if (!url) return;
+      try {
+        const res = await fetch('/api/iptv-qr/${sessionId}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playlistUrl: url })
+        });
+        if (res.ok) {
+          statusMsg.className = 'msg ok';
+          statusMsg.textContent = 'Sent to KP TV! Check your TV screen.';
+        } else {
+          throw new Error('Failed to send');
+        }
+      } catch (err) {
+        statusMsg.className = 'msg err';
+        statusMsg.textContent = 'Could not reach TV session. Please check connection.';
+      }
+    });
+  </script>
+</body>
+</html>`);
+  });
+
+  app.get('/api/iptv-qr/:sessionId', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const sessionId = String(req.params.sessionId || 'default');
+    const data = iptvQrSessions.get(sessionId) || { playlistUrl: '', updatedAt: 0 };
+    res.json(data);
+  });
+
+  app.post('/api/iptv-qr/:sessionId', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const sessionId = String(req.params.sessionId || 'default');
+    const playlistUrl = String(req.body?.playlistUrl || '').trim();
+    if (!playlistUrl) {
+      res.status(400).json({ error: 'Missing playlistUrl' });
+      return;
+    }
+    const record = { playlistUrl, updatedAt: Date.now() };
+    iptvQrSessions.set(sessionId, record);
+    res.json({ ok: true, ...record });
+  });
+
+  // Server-side M3U playlist fetcher to bypass browser CORS when loading user M3U playlists
+  app.get('/api/iptv-playlist', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const rawUrl = String(req.query.url || '').trim();
+    if (!rawUrl) {
+      res.status(400).json({ error: 'Missing playlist url parameter' });
+      return;
+    }
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        res.status(400).json({ error: 'Only http/https playlist links are supported' });
+        return;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      const upstream = await fetch(parsed.toString(), {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'KPTV-Launcher/2.4' },
+      });
+      clearTimeout(timer);
+      if (!upstream.ok) {
+        res.status(upstream.status).json({ error: `HTTP ${upstream.status} from playlist server` });
+        return;
+      }
+      const text = await upstream.text();
+      res.json({ content: text });
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to fetch playlist URL',
+      });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -334,3 +459,4 @@ async function startServer() {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   startServer();
 }
+

@@ -152,50 +152,7 @@ export const INITIAL_APPS: AppShortcut[] = [
 // Real matches are fetched dynamically via src/services/cricketService.ts
 export const CRICKET_MATCHES: CricketMatch[] = [];
 
-export const LIVE_CHANNELS: LiveChannel[] = [
-  {
-    id: 'ch-dd-sports',
-    name: 'DD Sports HD',
-    category: 'Sports',
-    streamUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    resolution: '1080p',
-    isHd: true,
-    currentProgram: 'National Cricket Tournament & Live Commentary',
-  },
-  {
-    id: 'ch-aajtak',
-    name: 'Aaj Tak News Live',
-    category: 'News',
-    streamUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    resolution: '1080p',
-    isHd: true,
-    currentProgram: 'Special Prime Time National Bulletin',
-  },
-  {
-    id: 'ch-redbull-tv',
-    name: 'Red Bull Extreme Sports',
-    category: 'Sports',
-    streamUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
-    resolution: '1080p',
-    isHd: true,
-    currentProgram: 'World Mountain Biking Championship',
-  },
-  {
-    id: 'ch-nasa',
-    name: 'NASA TV Live 4K',
-    category: 'Entertainment',
-    streamUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    resolution: '4K',
-    isHd: true,
-    currentProgram: 'ISS Spacewalk & Earth From Orbit',
-  },
-  {
-    id: 'ch-euronews',
-    name: 'Euronews World',
-    category: 'News',
-    streamUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    resolution: '720p',
-    isHd: true,
-    currentProgram: 'Global Headlines & Technology Today',
-  },
-];
+// Example IPTV streams removed per user specification:
+// Live TV only loads user-provided IPTV playlist links (pasted directly or scanned via Mobile QR).
+export const LIVE_CHANNELS: LiveChannel[] = [];
+

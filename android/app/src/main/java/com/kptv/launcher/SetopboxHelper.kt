@@ -1,80 +1,93 @@
 package com.kptv.launcher
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.tv.TvContract
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.os.Build
-import androidx.appcompat.app.AlertDialog
 
 /**
- * Safe Setopbox / HDMI Input helper.
- * Attempts documented Android TV Input Framework (TIF) source selection only when supported.
- * Never pretends that the input was switched when unsupported; shows clear manual instructions.
+ * Setopbox / HDMI & AV Input Source Launcher.
+ * Directly opens the user's selected source (HDMI 1, HDMI 2, or AV) via Android TV Input Framework
+ * passthrough URI or hardware TV player intents.
  */
 object SetopboxHelper {
 
     fun attemptDirectInputSwitch(context: Context, port: String): Boolean {
-        return attemptSystemTvInputIntent(context)
+        val normalizedPort = port.trim().lowercase()
+        if (attemptTvInputPassthrough(context, normalizedPort)) {
+            return true
+        }
+        return attemptSystemTvInputIntent(context, normalizedPort)
     }
 
-    fun openSetopboxSelector(context: Context, onDismissRestoreFocus: () -> Unit) {
-        val hdmiInputs = detectDocumentedHdmiInputs(context)
-
-        val options = arrayOf(
-            "Attempt TV Input Switcher (If supported by TV OS)",
-            "Manual Instructions for HDMI 1 / HDMI 2 / AV"
-        )
-
-        AlertDialog.Builder(context)
-            .setTitle("Setopbox Input Hub")
-            .setItems(options) { _, which ->
-                if (which == 0) {
-                    val launched = attemptSystemTvInputIntent(context)
-                    if (!launched) {
-                        showManualInstructionsDialog(
-                            context,
-                            hdmiInputs,
-                            "Direct HDMI switching is restricted by this TV firmware. No input was switched.",
-                            onDismissRestoreFocus
-                        )
-                    }
-                } else {
-                    showManualInstructionsDialog(
-                        context,
-                        hdmiInputs,
-                        "How to switch to your Setopbox safely:",
-                        onDismissRestoreFocus
-                    )
-                }
-            }
-            .setNegativeButton("Close", null)
-            .setOnDismissListener { onDismissRestoreFocus() }
-            .show()
-    }
-
-    private fun detectDocumentedHdmiInputs(context: Context): List<String> {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return emptyList()
+    private fun attemptTvInputPassthrough(context: Context, port: String): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
         return try {
             val tif = context.getSystemService(Context.TV_INPUT_SERVICE) as? TvInputManager
-                ?: return emptyList()
-            tif.tvInputList
-                .filter { it.type == TvInputInfo.TYPE_HDMI || it.type == TvInputInfo.TYPE_COMPOSITE }
-                .map { info ->
-                    info.loadLabel(context)?.toString() ?: info.id
+                ?: return false
+            val inputs = tif.tvInputList
+            if (inputs.isEmpty()) return false
+
+            val matchedInput: TvInputInfo? = if (port == "av") {
+                inputs.firstOrNull { info ->
+                    val label = info.loadLabel(context)?.toString()?.lowercase() ?: ""
+                    val id = info.id.lowercase()
+                    info.type == TvInputInfo.TYPE_COMPOSITE ||
+                        info.type == TvInputInfo.TYPE_COMPONENT ||
+                        info.type == TvInputInfo.TYPE_SVIDEO ||
+                        label.contains("av") ||
+                        label.contains("composite") ||
+                        id.contains("av") ||
+                        id.contains("cvbs")
                 }
+            } else {
+                val hdmiInputs = inputs.filter { it.type == TvInputInfo.TYPE_HDMI }
+                val targetIndex = if (port == "hdmi2") 1 else 0
+                hdmiInputs.firstOrNull { info ->
+                    val label = info.loadLabel(context)?.toString()?.lowercase() ?: ""
+                    val id = info.id.lowercase()
+                    if (port == "hdmi2") {
+                        label.contains("hdmi 2") || label.contains("hdmi2") || id.contains("hdmi2") || id.contains("hw1")
+                    } else {
+                        label.contains("hdmi 1") || label.contains("hdmi1") || id.contains("hdmi1") || id.contains("hw0")
+                    }
+                } ?: hdmiInputs.getOrNull(targetIndex) ?: hdmiInputs.firstOrNull()
+            }
+
+            val finalInput = matchedInput ?: inputs.firstOrNull() ?: return false
+            val passthroughUri = TvContract.buildChannelUriForPassthroughInput(finalInput.id)
+            val viewIntent = Intent(Intent.ACTION_VIEW, passthroughUri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(viewIntent)
+            true
         } catch (_: Exception) {
-            emptyList()
+            false
         }
     }
 
-    fun attemptSystemTvInputIntent(context: Context): Boolean {
+    fun attemptSystemTvInputIntent(context: Context, port: String = "hdmi1"): Boolean {
         val pm = context.packageManager
+        val sourceCode = when (port) {
+            "av" -> 1
+            "hdmi2" -> 24
+            else -> 23 // HDMI 1 common MStar/CloudTV input source ID
+        }
+
         val candidatePackages = listOf(
             "com.android.tv",
             "com.google.android.tv",
             "com.droidlogic.tvinput",
-            "com.mstar.tv.tvplayer.ui"
+            "com.droidlogic.app.tv",
+            "com.mstar.tv.tvplayer.ui",
+            "com.mstar.android.tvplayer.ui",
+            "com.mediatek.wwtv.tvcenter",
+            "com.realtek.tv",
+            "com.skyworth.tv",
+            "com.cultraview.tv"
         )
         for (pkg in candidatePackages) {
             try {
@@ -82,6 +95,9 @@ object SetopboxHelper {
                     ?: pm.getLaunchIntentForPackage(pkg)
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    intent.putExtra("source", port)
+                    intent.putExtra("input_source", sourceCode)
+                    intent.putExtra("port", port)
                     context.startActivity(intent)
                     return true
                 }
@@ -89,35 +105,36 @@ object SetopboxHelper {
                 // continue
             }
         }
-        return false
-    }
 
-    private fun showManualInstructionsDialog(
-        context: Context,
-        detectedInputs: List<String>,
-        headerNote: String,
-        onDismissRestoreFocus: () -> Unit
-    ) {
-        val detectedLine = if (detectedInputs.isNotEmpty()) {
-            "Detected TV Inputs: ${detectedInputs.joinToString(", ")}\n\n"
-        } else {
-            "Detected TV Inputs: Standard Cloud TV OS Firmware (Direct HDMI API not exposed to third-party apps)\n\n"
+        // Dynamic scan for any installed system TV / HDMI source app on Cloud TV OS
+        try {
+            val allApps = InstalledAppsRepository(context).getAllInstalledApps()
+            val tvApp = allApps.firstOrNull { app ->
+                val p = app.packageName.lowercase()
+                val l = app.label.lowercase()
+                p.contains("tvinput") || p.contains("tvplayer") || p.contains("hdmi") ||
+                    l == "tv" || l == "hdmi" || l == "av" || l == "source"
+            }
+            if (tvApp != null) {
+                val launch = pm.getLeanbackLaunchIntentForPackage(tvApp.packageName)
+                    ?: pm.getLaunchIntentForPackage(tvApp.packageName)
+                    ?: if (!tvApp.activityName.isNullOrEmpty()) {
+                        Intent(Intent.ACTION_MAIN).apply {
+                            component = ComponentName(tvApp.packageName, tvApp.activityName)
+                        }
+                    } else null
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    launch.putExtra("source", port)
+                    launch.putExtra("input_source", sourceCode)
+                    context.startActivity(launch)
+                    return true
+                }
+            }
+        } catch (_: Exception) {
+            // ignore
         }
 
-        val message = """
-            $headerNote
-
-            $detectedLine
-            1. Power ON your DTH / Cable Setopbox.
-            2. Press the "SOURCE" or "INPUT" button on your physical Iconic TV remote.
-            3. Select HDMI 1, HDMI 2, or AV from the TV's hardware input menu.
-        """.trimIndent()
-
-        AlertDialog.Builder(context)
-            .setTitle("Setopbox Manual HDMI Instructions")
-            .setMessage(message)
-            .setPositiveButton("OK", null)
-            .setOnDismissListener { onDismissRestoreFocus() }
-            .show()
+        return false
     }
 }

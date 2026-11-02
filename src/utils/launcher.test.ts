@@ -244,7 +244,16 @@ test('Android project generator includes all required Gradle Wrapper, Manifest, 
   const layoutXml = ANDROID_PROJECT_FILES['app/src/main/res/layout/activity_main.xml'];
   assert.ok(layoutXml.includes('android.webkit.WebView'));
   assert.ok(layoutXml.includes('@+id/kp_tv_webview'));
+
+  // Verify SetopboxHelper uses TvContract passthrough URI for direct HDMI/AV source switching
+  const setopboxHelper = ANDROID_PROJECT_FILES['app/src/main/java/com/kptv/launcher/SetopboxHelper.kt'];
+  assert.ok(setopboxHelper.includes('buildChannelUriForPassthroughInput'));
+
+  // Verify MainActivity includes mobile QR IPTV paste server and openSystemSettings
+  assert.ok(mainActivity.includes('getIptvQrUrl'));
+  assert.ok(mainActivity.includes('openSystemSettings'));
 });
+
 
 
 

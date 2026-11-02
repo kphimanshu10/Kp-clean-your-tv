@@ -286,9 +286,13 @@ class InstalledAppsRepository(private val context: Context) {
 
             val label = info.loadLabel(pm)?.toString()?.trim().takeUnless { it.isNullOrEmpty() } ?: pkg
             val icon = try {
-                info.loadIcon(pm)
+                pm.getApplicationIcon(pkg)
             } catch (_: Exception) {
-                null
+                try {
+                    info.loadIcon(pm)
+                } catch (_: Exception) {
+                    pm.defaultActivityIcon
+                }
             }
 
             val priority = getPreferredDockPriority(pkg, label)
@@ -713,81 +717,94 @@ class CricketScoreService(private val context: Context) {
 
   'app/src/main/java/com/kptv/launcher/SetopboxHelper.kt': `package com.kptv.launcher
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.tv.TvContract
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.os.Build
-import androidx.appcompat.app.AlertDialog
 
 /**
- * Safe Setopbox / HDMI Input helper.
- * Attempts documented Android TV Input Framework (TIF) source selection only when supported.
- * Never pretends that the input was switched when unsupported; shows clear manual instructions.
+ * Setopbox / HDMI & AV Input Source Launcher.
+ * Directly opens the user's selected source (HDMI 1, HDMI 2, or AV) via Android TV Input Framework
+ * passthrough URI or hardware TV player intents.
  */
 object SetopboxHelper {
 
     fun attemptDirectInputSwitch(context: Context, port: String): Boolean {
-        return attemptSystemTvInputIntent(context)
+        val normalizedPort = port.trim().lowercase()
+        if (attemptTvInputPassthrough(context, normalizedPort)) {
+            return true
+        }
+        return attemptSystemTvInputIntent(context, normalizedPort)
     }
 
-    fun openSetopboxSelector(context: Context, onDismissRestoreFocus: () -> Unit) {
-        val hdmiInputs = detectDocumentedHdmiInputs(context)
-
-        val options = arrayOf(
-            "Attempt TV Input Switcher (If supported by TV OS)",
-            "Manual Instructions for HDMI 1 / HDMI 2 / AV"
-        )
-
-        AlertDialog.Builder(context)
-            .setTitle("Setopbox Input Hub")
-            .setItems(options) { _, which ->
-                if (which == 0) {
-                    val launched = attemptSystemTvInputIntent(context)
-                    if (!launched) {
-                        showManualInstructionsDialog(
-                            context,
-                            hdmiInputs,
-                            "Direct HDMI switching is restricted by this TV firmware. No input was switched.",
-                            onDismissRestoreFocus
-                        )
-                    }
-                } else {
-                    showManualInstructionsDialog(
-                        context,
-                        hdmiInputs,
-                        "How to switch to your Setopbox safely:",
-                        onDismissRestoreFocus
-                    )
-                }
-            }
-            .setNegativeButton("Close", null)
-            .setOnDismissListener { onDismissRestoreFocus() }
-            .show()
-    }
-
-    private fun detectDocumentedHdmiInputs(context: Context): List<String> {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return emptyList()
+    private fun attemptTvInputPassthrough(context: Context, port: String): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
         return try {
             val tif = context.getSystemService(Context.TV_INPUT_SERVICE) as? TvInputManager
-                ?: return emptyList()
-            tif.tvInputList
-                .filter { it.type == TvInputInfo.TYPE_HDMI || it.type == TvInputInfo.TYPE_COMPOSITE }
-                .map { info ->
-                    info.loadLabel(context)?.toString() ?: info.id
+                ?: return false
+            val inputs = tif.tvInputList
+            if (inputs.isEmpty()) return false
+
+            val matchedInput: TvInputInfo? = if (port == "av") {
+                inputs.firstOrNull { info ->
+                    val label = info.loadLabel(context)?.toString()?.lowercase() ?: ""
+                    val id = info.id.lowercase()
+                    info.type == TvInputInfo.TYPE_COMPOSITE ||
+                        info.type == TvInputInfo.TYPE_COMPONENT ||
+                        info.type == TvInputInfo.TYPE_SVIDEO ||
+                        label.contains("av") ||
+                        label.contains("composite") ||
+                        id.contains("av") ||
+                        id.contains("cvbs")
                 }
+            } else {
+                val hdmiInputs = inputs.filter { it.type == TvInputInfo.TYPE_HDMI }
+                val targetIndex = if (port == "hdmi2") 1 else 0
+                hdmiInputs.firstOrNull { info ->
+                    val label = info.loadLabel(context)?.toString()?.lowercase() ?: ""
+                    val id = info.id.lowercase()
+                    if (port == "hdmi2") {
+                        label.contains("hdmi 2") || label.contains("hdmi2") || id.contains("hdmi2") || id.contains("hw1")
+                    } else {
+                        label.contains("hdmi 1") || label.contains("hdmi1") || id.contains("hdmi1") || id.contains("hw0")
+                    }
+                } ?: hdmiInputs.getOrNull(targetIndex) ?: hdmiInputs.firstOrNull()
+            }
+
+            val finalInput = matchedInput ?: inputs.firstOrNull() ?: return false
+            val passthroughUri = TvContract.buildChannelUriForPassthroughInput(finalInput.id)
+            val viewIntent = Intent(Intent.ACTION_VIEW, passthroughUri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(viewIntent)
+            true
         } catch (_: Exception) {
-            emptyList()
+            false
         }
     }
 
-    fun attemptSystemTvInputIntent(context: Context): Boolean {
+    fun attemptSystemTvInputIntent(context: Context, port: String = "hdmi1"): Boolean {
         val pm = context.packageManager
+        val sourceCode = when (port) {
+            "av" -> 1
+            "hdmi2" -> 24
+            else -> 23 // HDMI 1 common MStar/CloudTV input source ID
+        }
+
         val candidatePackages = listOf(
             "com.android.tv",
             "com.google.android.tv",
             "com.droidlogic.tvinput",
-            "com.mstar.tv.tvplayer.ui"
+            "com.droidlogic.app.tv",
+            "com.mstar.tv.tvplayer.ui",
+            "com.mstar.android.tvplayer.ui",
+            "com.mediatek.wwtv.tvcenter",
+            "com.realtek.tv",
+            "com.skyworth.tv",
+            "com.cultraview.tv"
         )
         for (pkg in candidatePackages) {
             try {
@@ -795,6 +812,9 @@ object SetopboxHelper {
                     ?: pm.getLaunchIntentForPackage(pkg)
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    intent.putExtra("source", port)
+                    intent.putExtra("input_source", sourceCode)
+                    intent.putExtra("port", port)
                     context.startActivity(intent)
                     return true
                 }
@@ -802,36 +822,37 @@ object SetopboxHelper {
                 // continue
             }
         }
-        return false
-    }
 
-    private fun showManualInstructionsDialog(
-        context: Context,
-        detectedInputs: List<String>,
-        headerNote: String,
-        onDismissRestoreFocus: () -> Unit
-    ) {
-        val detectedLine = if (detectedInputs.isNotEmpty()) {
-            "Detected TV Inputs: \${detectedInputs.joinToString(", ")}\\n\\n"
-        } else {
-            "Detected TV Inputs: Standard Cloud TV OS Firmware (Direct HDMI API not exposed to third-party apps)\\n\\n"
+        // Dynamic scan for any installed system TV / HDMI source app on Cloud TV OS
+        try {
+            val allApps = InstalledAppsRepository(context).getAllInstalledApps()
+            val tvApp = allApps.firstOrNull { app ->
+                val p = app.packageName.lowercase()
+                val l = app.label.lowercase()
+                p.contains("tvinput") || p.contains("tvplayer") || p.contains("hdmi") ||
+                    l == "tv" || l == "hdmi" || l == "av" || l == "source"
+            }
+            if (tvApp != null) {
+                val launch = pm.getLeanbackLaunchIntentForPackage(tvApp.packageName)
+                    ?: pm.getLaunchIntentForPackage(tvApp.packageName)
+                    ?: if (!tvApp.activityName.isNullOrEmpty()) {
+                        Intent(Intent.ACTION_MAIN).apply {
+                            component = ComponentName(tvApp.packageName, tvApp.activityName)
+                        }
+                    } else null
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    launch.putExtra("source", port)
+                    launch.putExtra("input_source", sourceCode)
+                    context.startActivity(launch)
+                    return true
+                }
+            }
+        } catch (_: Exception) {
+            // ignore
         }
 
-        val message = """
-            \$headerNote
-
-            \$detectedLine
-            1. Power ON your DTH / Cable Setopbox.
-            2. Press the "SOURCE" or "INPUT" button on your physical Iconic TV remote.
-            3. Select HDMI 1, HDMI 2, or AV from the TV's hardware input menu.
-        """.trimIndent()
-
-        AlertDialog.Builder(context)
-            .setTitle("Setopbox Manual HDMI Instructions")
-            .setMessage(message)
-            .setPositiveButton("OK", null)
-            .setOnDismissListener { onDismissRestoreFocus() }
-            .show()
+        return false
     }
 }
 `,
@@ -907,7 +928,7 @@ object DeviceDiagnosticsHelper {
         return obj.toString()
     }
 
-    private fun getLocalIpv4Address(): String? {
+    fun getLocalIpv4Address(): String? {
         return try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
@@ -967,6 +988,7 @@ object DeviceDiagnosticsHelper {
   'app/src/main/java/com/kptv/launcher/MainActivity.kt': `package com.kptv.launcher
 
 import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
@@ -986,23 +1008,32 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.kptv.launcher.databinding.ActivityMainBinding
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
 import java.net.URLConnection
+import java.net.URLDecoder
 
 /**
  * KP TV – Smart TV Launcher MainActivity.
- * Renders the full production KP TV web application inside a hardware-accelerated,
- * edge-to-edge 16:9 landscape WebView while bridging real Android TV / Cloud TV OS
- * package discovery, app launching, HDMI input helpers, Wi-Fi status, and D-pad keys.
+ * Renders the KP TV launcher interface in an edge-to-edge 16:9 landscape WebView
+ * while bridging real Android TV / Cloud TV OS package discovery, app launching,
+ * direct Setopbox HDMI/AV source switching, local Wi-Fi QR IPTV paste server,
+ * native Device Settings, and physical remote control keys.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var appsRepo: InstalledAppsRepository
     private lateinit var cricketService: CricketScoreService
+    @Volatile
+    private var latestIptvUrl: String = ""
+    private var qrServerSocket: ServerSocket? = null
 
     companion object {
         private const val LOCAL_HOST = "kptv.local"
         private const val START_URL = "https://kptv.local/index.html"
+        private const val QR_SERVER_PORT = 8765
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1015,6 +1046,7 @@ class MainActivity : AppCompatActivity() {
         appsRepo = InstalledAppsRepository(this)
         cricketService = CricketScoreService(this)
 
+        startLocalIptvQrServer()
         setupWebView()
         if (savedInstanceState == null) {
             binding.kpTvWebview.loadUrl(START_URL)
@@ -1049,9 +1081,96 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        try {
+            qrServerSocket?.close()
+        } catch (_: Exception) {
+        }
         binding.kpTvWebview.stopLoading()
         binding.kpTvWebview.destroy()
         super.onDestroy()
+    }
+
+    private fun startLocalIptvQrServer() {
+        Thread {
+            try {
+                val server = ServerSocket(QR_SERVER_PORT)
+                qrServerSocket = server
+                while (!server.isClosed) {
+                    val client = server.accept() ?: continue
+                    Thread {
+                        try {
+                            client.soTimeout = 5000
+                            val reader = BufferedReader(InputStreamReader(client.getInputStream()))
+                            val requestLine = reader.readLine() ?: ""
+                            var contentLength = 0
+                            var line = reader.readLine()
+                            while (!line.isNullOrEmpty()) {
+                                if (line.lowercase().startsWith("content-length:")) {
+                                    contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                                }
+                                line = reader.readLine()
+                            }
+
+                            if (requestLine.startsWith("POST")) {
+                                val bodyChars = CharArray(contentLength)
+                                var readTotal = 0
+                                while (readTotal < contentLength) {
+                                    val r = reader.read(bodyChars, readTotal, contentLength - readTotal)
+                                    if (r <= 0) break
+                                    readTotal += r
+                                }
+                                val bodyStr = String(bodyChars, 0, readTotal)
+                                val rawUrl = if (bodyStr.contains("playlistUrl=")) {
+                                    URLDecoder.decode(bodyStr.substringAfter("playlistUrl=").substringBefore("&"), "UTF-8")
+                                } else {
+                                    bodyStr.trim()
+                                }
+                                if (rawUrl.startsWith("http")) {
+                                    latestIptvUrl = rawUrl
+                                    runOnUiThread {
+                                        val safeUrl = rawUrl.replace("'", "")
+                                        binding.kpTvWebview.evaluateJavascript(
+                                            "window.dispatchEvent(new CustomEvent('kptv-iptv-url', { detail: '\$safeUrl' }));",
+                                            null
+                                        )
+                                    }
+                                }
+                            }
+
+                            val html = buildMobileIptvHtml(latestIptvUrl.isNotEmpty() && requestLine.startsWith("POST"))
+                            val bytes = html.toByteArray(Charsets.UTF_8)
+                            val out = client.getOutputStream()
+                            val header = "HTTP/1.1 200 OK\\r\\nContent-Type: text/html; charset=utf-8\\r\\nContent-Length: \${bytes.size}\\r\\nConnection: close\\r\\n\\r\\n"
+                            out.write(header.toByteArray(Charsets.UTF_8))
+                            out.write(bytes)
+                            out.flush()
+                        } catch (_: Exception) {
+                        } finally {
+                            try {
+                                client.close()
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }.start()
+                }
+            } catch (_: Exception) {
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun buildMobileIptvHtml(submitted: Boolean): String {
+        val banner = if (submitted) {
+            "<div style='margin-top:14px;padding:12px;border-radius:12px;background:#064e3b;color:#6ee7b7;font-weight:bold;text-align:center;'>Sent to KP TV! Check your TV screen.</div>"
+        } else ""
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>KP TV IPTV</title></head>" +
+            "<body style='margin:0;min-height:100vh;background:#030712;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;'>" +
+            "<div style='width:100%;max-width:400px;background:#0f172a;border:1px solid #38bdf8;border-radius:20px;padding:22px;'>" +
+            "<h2 style='margin:0 0 8px;'>KP TV – Send IPTV Link</h2>" +
+            "<p style='font-size:13px;color:#94a3b8;margin:0 0 16px;'>Paste your M3U / M3U8 IPTV playlist link below and tap Send to load it on your TV.</p>" +
+            "<form method='POST' action='/iptv'>" +
+            "<input name='playlistUrl' type='url' placeholder='https://.../playlist.m3u' required style='width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #334155;background:#020617;color:#fff;margin-bottom:14px;'/>" +
+            "<button type='submit' style='width:100%;padding:13px;border-radius:12px;border:none;background:#0284c7;color:#fff;font-weight:bold;font-size:15px;'>Send Playlist to KP TV</button>" +
+            "</form>" + banner + "</div></body></html>"
     }
 
     private fun enableImmersiveFullscreen() {
@@ -1150,6 +1269,7 @@ class MainActivity : AppCompatActivity() {
             if (event.repeatCount > 0 && (
                     keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
                     keyCode == KeyEvent.KEYCODE_ENTER ||
+                    keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
                     keyCode == KeyEvent.KEYCODE_BACK
                 )
             ) {
@@ -1161,7 +1281,9 @@ class MainActivity : AppCompatActivity() {
                 KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown"
                 KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft"
                 KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight"
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> "Enter"
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> "Enter"
                 KeyEvent.KEYCODE_BACK -> "Escape"
                 KeyEvent.KEYCODE_HOME -> "Home"
                 else -> null
@@ -1199,6 +1321,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun getIptvQrUrl(): String {
+            val ip = DeviceDiagnosticsHelper.getLocalIpv4Address() ?: return ""
+            return "http://\$ip:\$QR_SERVER_PORT/iptv"
+        }
+
+        @JavascriptInterface
+        fun getLatestIptvUrl(): String {
+            return latestIptvUrl
+        }
+
+        @JavascriptInterface
         fun saveCricketConfig(endpointUrl: String, apiKey: String): Boolean {
             cricketService.saveApiConfig(endpointUrl, apiKey)
             return true
@@ -1228,7 +1361,16 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
                 true
             } catch (_: Exception) {
-                false
+                try {
+                    val tvSettings = Intent().apply {
+                        component = ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(tvSettings)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
             }
         }
 

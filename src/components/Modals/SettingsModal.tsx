@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
-import { 
-  X, Image, Clock, Volume2, Shield, Download, 
-  Smartphone, Monitor, RefreshCw, CheckCircle2, FileCode, Check
+import {
+  X,
+  Image,
+  Clock,
+  Volume2,
+  Shield,
+  Download,
+  Smartphone,
+  Monitor,
+  RefreshCw,
+  CheckCircle2,
+  FileCode,
+  Check,
+  Settings,
+  Wifi,
+  Tv,
+  ExternalLink,
 } from 'lucide-react';
 import { LauncherSettings, DeviceDiagnostics } from '../../types/launcher';
 import { generateAndroidStudioProjectZip } from '../../utils/androidProjectGenerator';
@@ -25,6 +39,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'appearance' | 'hardware' | 'export'>('appearance');
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [systemStatusMsg, setSystemStatusMsg] = useState<string | null>(null);
+
+  const handleOpenDeviceSettings = () => {
+    try {
+      if (window.AndroidTvBridge?.openSystemSettings) {
+        const opened = window.AndroidTvBridge.openSystemSettings();
+        if (opened) return;
+      }
+    } catch {
+      // ignore
+    }
+    setSystemStatusMsg('Opening Android Device Settings requires the installed KP TV APK on your TV.');
+    setTimeout(() => setSystemStatusMsg(null), 4000);
+  };
+
+  const handleOpenWifiSettings = () => {
+    try {
+      if (window.AndroidTvBridge?.openWifiSettings) {
+        const opened = window.AndroidTvBridge.openWifiSettings();
+        if (opened) return;
+      }
+    } catch {
+      // ignore
+    }
+    setSystemStatusMsg('Opening Android Wi-Fi Settings requires the installed KP TV APK on your TV.');
+    setTimeout(() => setSystemStatusMsg(null), 4000);
+  };
 
   const handleDownloadAndroidZip = async () => {
     try {
@@ -55,18 +96,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="flex items-center space-x-3">
             <h2 className="text-2xl font-black text-white">KP TV Settings</h2>
             <span className="text-xs bg-blue-900/60 text-cyan-300 font-bold px-3 py-1 rounded-full border border-blue-500/40">
-              Iconic 32" Cloud TV Mode
+              Smart TV Launcher
             </span>
           </div>
 
-          <button
-            onClick={onClose}
-            aria-label="Close Settings"
-            className="p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-red-600 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2.5">
+            <button
+              onClick={handleOpenDeviceSettings}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-extrabold shadow-[0_0_15px_rgba(6,182,212,0.4)] flex items-center space-x-1.5 transition-all cursor-pointer"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Open Device Settings</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              aria-label="Close Settings"
+              className="p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-red-600 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {systemStatusMsg && (
+          <div className="mt-3 px-4 py-2.5 rounded-xl bg-cyan-950/90 border border-cyan-500/40 text-cyan-200 text-xs font-bold flex items-center justify-between">
+            <span>{systemStatusMsg}</span>
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <div className="flex space-x-3 py-3 border-b border-white/5">
@@ -78,7 +135,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'bg-slate-800 text-slate-400 hover:text-white'
             }`}
           >
-            Display & Appearance
+            System, Source & Display
           </button>
           <button
             onClick={() => setActiveTab('hardware')}
@@ -88,7 +145,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'bg-slate-800 text-slate-400 hover:text-white'
             }`}
           >
-            Hardware & Cloud TV OS Specs
+            Hardware & TV OS Specs
           </button>
           <button
             onClick={() => setActiveTab('export')}
@@ -105,7 +162,69 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto py-4 pr-1">
           {activeTab === 'appearance' && (
-            <div className="space-y-6">
+            <div className="space-y-5">
+              {/* Native Android TV Device Settings & Default Setopbox Source */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-slate-950/80 border border-cyan-500/30 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-cyan-400" />
+                      <span>Android TV System Settings</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Open your TV’s native Android Settings for Display, Audio, Bluetooth, Apps, and Network.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2.5 mt-4">
+                    <button
+                      onClick={handleOpenDeviceSettings}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-extrabold flex items-center justify-center space-x-2 shadow-[0_0_15px_rgba(6,182,212,0.4)] cursor-pointer"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Open Device Settings</span>
+                    </button>
+                    <button
+                      onClick={handleOpenWifiSettings}
+                      className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center justify-center space-x-1.5 cursor-pointer"
+                    >
+                      <Wifi className="w-4 h-4" />
+                      <span>Wi-Fi Settings</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Setopbox Default Input Source */}
+                <div className="p-4 rounded-2xl bg-slate-950/80 border border-fuchsia-500/30 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Tv className="w-4 h-4 text-fuchsia-400" />
+                      <span>Setopbox Default Source</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Clicking Setopbox on the Home screen immediately opens this selected source:
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-4">
+                    {(['hdmi1', 'hdmi2', 'av'] as const).map(port => {
+                      const active = settings.defaultSetopboxPort === port;
+                      return (
+                        <button
+                          key={port}
+                          onClick={() => onUpdateSettings({ defaultSetopboxPort: port })}
+                          className={`py-2.5 px-3 rounded-xl text-xs font-extrabold uppercase transition-all cursor-pointer ${
+                            active
+                              ? 'bg-fuchsia-600 text-white shadow-[0_0_15px_rgba(217,70,239,0.5)] ring-2 ring-fuchsia-300'
+                              : 'bg-slate-800 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          {port === 'av' ? 'AV / RCA' : port.toUpperCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               {/* Wallpaper Studio Launcher & Quick Picker */}
               <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10">
                 <div className="flex items-center justify-between mb-4">
@@ -133,7 +252,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     return (
                       <button
                         key={wp.id}
-                        onClick={() => onUpdateSettings({ wallpaperPreset: wp.id as LauncherSettings['wallpaperPreset'] })}
+                        onClick={() =>
+                          onUpdateSettings({
+                            wallpaperPreset: wp.id as LauncherSettings['wallpaperPreset'],
+                          })
+                        }
                         className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between h-28 overflow-hidden relative ${
                           isSelected
                             ? 'border-cyan-400 ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]'
@@ -340,7 +463,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Cloud TV OS Compatibility Assessment */}
               <div className="p-4 rounded-2xl bg-slate-950/80 border border-cyan-500/30">
                 <h3 className="text-sm font-bold text-cyan-300 mb-2 flex items-center gap-2">
                   <Shield className="w-4 h-4 text-cyan-400" />
@@ -385,7 +507,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs shadow-[0_0_25px_rgba(16,185,129,0.5)] flex items-center space-x-2 transition-all cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
-                      <span>Download Built Debug APK (6.7 MB)</span>
+                      <span>Download Built Debug APK</span>
                     </a>
                     <button
                       onClick={handleDownloadAndroidZip}
@@ -415,7 +537,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
 
-              {/* Windows PC ADB Guide Snippet */}
               <div className="p-4 rounded-2xl bg-slate-950 border border-white/10 font-mono text-xs text-slate-300 space-y-2">
                 <div className="text-cyan-400 font-bold font-sans">
                   Windows PC Commands to Install via USB / Wi-Fi Debugging:

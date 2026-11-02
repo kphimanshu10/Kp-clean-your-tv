@@ -10,7 +10,6 @@ import { LiveTvCard } from './components/HeroCards/LiveTvCard';
 import { SetopboxCard } from './components/HeroCards/SetopboxCard';
 import { CricketScoreCard } from './components/HeroCards/CricketScoreCard';
 import { BottomDock } from './components/BottomDock';
-import { VirtualTvRemote } from './components/VirtualTvRemote';
 import { LiveTvModal } from './components/Modals/LiveTvModal';
 import { SetopboxModal } from './components/Modals/SetopboxModal';
 import { CricketScoreModal } from './components/Modals/CricketScoreModal';
@@ -19,7 +18,6 @@ import { SettingsModal } from './components/Modals/SettingsModal';
 import { AboutModal } from './components/Modals/AboutModal';
 import { WifiModal } from './components/Modals/WifiModal';
 import { NotificationsModal } from './components/Modals/NotificationsModal';
-import { AppLaunchModal } from './components/Modals/AppLaunchModal';
 import { WallpaperModal } from './components/Modals/WallpaperModal';
 import { DynamicWallpaper } from './components/DynamicWallpaper';
 import { INITIAL_APPS } from './data/mockData';
@@ -75,53 +73,70 @@ export default function App() {
     headerIndex: 0,
   });
 
+  // Brief non-intrusive TV status toast (replaces simulator modal)
+  const [tvToast, setTvToast] = useState<string | null>(null);
+  const showTvToast = useCallback((msg: string) => {
+    setTvToast(msg);
+  }, []);
+
+  useEffect(() => {
+    if (!tvToast) return;
+    const t = setTimeout(() => setTvToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [tvToast]);
+
   // App Data & Persistence
   const [apps, setApps] = useState<AppShortcut[]>(() => {
     try {
-      const saved = localStorage.getItem('kptv_apps_v2');
+      const saved = localStorage.getItem('kptv_apps_v3');
       return saved ? JSON.parse(saved) : INITIAL_APPS;
     } catch {
       return INITIAL_APPS;
     }
   });
 
-  // Sync Real Installed Android Apps into the App Drawer when running in the Android APK
-  // while preserving the exact signature Home Dock layout (NetMirror, JioHotstar, YouTube, Airtel, + More)
-  useEffect(() => {
+  // Sync Real Installed Android Apps when running on the TV APK:
+  // - Dock Bar keeps default dock apps (NetMirror TV, JioHotstar, YouTube, Airtel) with default icon & name
+  // - Apps Section (AppDrawerModal) displays ONLY genuinely installed apps on the device with their default app icons
+  const syncInstalledAndroidApps = useCallback(() => {
     try {
       if (typeof window !== 'undefined' && window.AndroidTvBridge?.getInstalledApps) {
         const rawJson = window.AndroidTvBridge.getInstalledApps();
         const nativeApps = JSON.parse(rawJson) as AndroidInstalledApp[];
-        if (Array.isArray(nativeApps) && nativeApps.length > 0) {
+        if (Array.isArray(nativeApps)) {
           setApps(prev => {
-            const existingPackages = new Set(prev.map(a => a.packageName.toLowerCase()));
-            const updated = prev.map(item => {
+            const matchedPackages = new Set<string>();
+            const defaultDockDefaults = prev.filter(a => a.inDock);
+
+            const updatedDock = defaultDockDefaults.map(dockItem => {
               const match = nativeApps.find(
                 na =>
-                  na.packageName.toLowerCase() === item.packageName.toLowerCase() ||
-                  (item.id === 'youtube' && na.packageName.toLowerCase().includes('youtube')) ||
-                  (item.id === 'hotstar' && na.packageName.toLowerCase().includes('hotstar')) ||
-                  (item.id === 'netmirror' && na.packageName.toLowerCase().includes('netmirror')) ||
-                  (item.id === 'airtel' && na.packageName.toLowerCase().includes('airtel')) ||
-                  (item.id === 'netflix' && na.packageName.toLowerCase().includes('netflix')) ||
-                  (item.id === 'prime' &&
-                    (na.packageName.toLowerCase().includes('amazonvideo') ||
-                      na.packageName.toLowerCase().includes('avod')))
+                  na.packageName.toLowerCase() === dockItem.packageName.toLowerCase() ||
+                  (dockItem.id === 'youtube' && na.packageName.toLowerCase().includes('youtube')) ||
+                  (dockItem.id === 'hotstar' && na.packageName.toLowerCase().includes('hotstar')) ||
+                  (dockItem.id === 'netmirror' && na.packageName.toLowerCase().includes('netmirror')) ||
+                  (dockItem.id === 'airtel' && na.packageName.toLowerCase().includes('airtel'))
               );
               if (match) {
-                existingPackages.add(match.packageName.toLowerCase());
+                matchedPackages.add(match.packageName.toLowerCase());
                 return {
-                  ...item,
+                  ...dockItem,
+                  name: dockItem.name || match.label,
                   packageName: match.packageName,
-                  customIcon: match.iconDataUrl || item.customIcon,
+                  customIcon: match.iconDataUrl || dockItem.customIcon,
                   isInstalled: true,
                 };
               }
-              return item;
+              // Keep in Dock with default icon & name as last build launcher,
+              // but mark isInstalled: false so Apps section only shows installed apps
+              return {
+                ...dockItem,
+                isInstalled: false,
+              };
             });
 
-            const extraNativeApps: AppShortcut[] = nativeApps
-              .filter(na => !existingPackages.has(na.packageName.toLowerCase()))
+            const installedDrawerApps: AppShortcut[] = nativeApps
+              .filter(na => !matchedPackages.has(na.packageName.toLowerCase()))
               .map((na, idx) => ({
                 id: `android-${na.packageName}`,
                 name: na.label || na.packageName,
@@ -138,7 +153,7 @@ export default function App() {
                 accentColor: '#0284c7',
               }));
 
-            return [...updated, ...extraNativeApps];
+            return [...updatedDock, ...installedDrawerApps];
           });
         }
       }
@@ -146,6 +161,10 @@ export default function App() {
       // ignore bridge parse errors
     }
   }, []);
+
+  useEffect(() => {
+    syncInstalledAndroidApps();
+  }, [syncInstalledAndroidApps]);
 
   // Live Cricket Score State (No hardcoded demo scores)
   const [cricketStatus, setCricketStatus] = useState<CricketServiceStatus>('unconfigured');
@@ -166,7 +185,7 @@ export default function App() {
       soundEffects: true,
       dpadSensitivity: 'normal',
       defaultSetopboxPort: 'hdmi1',
-      simulateCloudTvOs: true,
+      simulateCloudTvOs: false,
       safeRecoveryConfirmed: true,
       weatherLocation: 'New Delhi',
       temperatureUnit: 'C',
@@ -195,7 +214,6 @@ export default function App() {
     | 'notifications'
     | 'wallpaper'
   >('none');
-  const [launchedApp, setLaunchedApp] = useState<AppShortcut | null>(null);
 
   // Refresh Live Cricket Score
   const refreshCricketScores = useCallback(async (configOverride?: CricketApiConfig) => {
@@ -246,14 +264,13 @@ export default function App() {
   // Sync Apps Persistence
   useEffect(() => {
     try {
-      localStorage.setItem('kptv_apps_v2', JSON.stringify(apps));
+      localStorage.setItem('kptv_apps_v3', JSON.stringify(apps));
     } catch {
       // ignore
     }
   }, [apps]);
 
   const dockApps = apps.filter(a => a.inDock).sort((a, b) => a.dockOrder - b.dockOrder);
-  // Total focusable items in dock = pinned dock apps + 1 ("+ More" button)
   const totalDockButtons = dockApps.length + 1;
 
   // Determine active wallpaper render mode
@@ -264,56 +281,104 @@ export default function App() {
     ? 'custom-image'
     : 'default-mountain';
 
-  // Helper to launch an app via AndroidTvBridge or fallback modal
-  const triggerAppLaunch = useCallback((app: AppShortcut) => {
+  // Direct Application Launch via Native Android Bridge (No simulator modal)
+  const triggerAppLaunch = useCallback(
+    (app: AppShortcut) => {
+      soundFx.playSelect();
+      if (
+        typeof window !== 'undefined' &&
+        window.AndroidTvBridge &&
+        typeof window.AndroidTvBridge.launchApp === 'function'
+      ) {
+        const launched = window.AndroidTvBridge.launchApp(app.packageName);
+        if (launched) return;
+        showTvToast(`${app.name} is not installed on this TV.`);
+        return;
+      }
+      showTvToast(`Launching ${app.name} (${app.packageName})...`);
+    },
+    [showTvToast]
+  );
+
+  // Direct Setopbox Action: Clicking Setopbox opens the already-selected source (HDMI 1, HDMI 2, or AV) immediately
+  const handleSetopboxDirectLaunch = useCallback(() => {
     soundFx.playSelect();
+    const activePort = settings.defaultSetopboxPort || 'hdmi1';
     if (
       typeof window !== 'undefined' &&
       window.AndroidTvBridge &&
-      typeof window.AndroidTvBridge.launchApp === 'function'
+      typeof window.AndroidTvBridge.switchHdmiInput === 'function'
     ) {
-      const launched = window.AndroidTvBridge.launchApp(app.packageName);
-      if (launched) return;
+      const switched = window.AndroidTvBridge.switchHdmiInput(activePort);
+      if (switched) {
+        showTvToast(`Switched TV Source to ${activePort.toUpperCase()}`);
+        return;
+      }
     }
-    setLaunchedApp(app);
-  }, []);
+    // If running in browser or user needs to select HDMI/AV source
+    setActiveModal('setopbox');
+  }, [settings.defaultSetopboxPort, showTvToast]);
 
   // D-Pad Remote Direction Handler
   const handleDpadMove = useCallback(
     (direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
-      if (activeModal !== 'none' || launchedApp !== null) return;
       soundFx.playFocus();
+
+      // If a modal is open, move focus between interactive elements inside the modal
+      if (activeModal !== 'none') {
+        const focusables = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '.fixed.inset-0 button:not([disabled]), .fixed.inset-0 input:not([disabled]), .fixed.inset-0 a[href]'
+          )
+        );
+        if (focusables.length === 0) return;
+        const currentIdx = focusables.indexOf(document.activeElement as HTMLElement);
+        let nextIdx = 0;
+        if (direction === 'RIGHT' || direction === 'DOWN') {
+          nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % focusables.length;
+        } else {
+          nextIdx = currentIdx <= 0 ? focusables.length - 1 : currentIdx - 1;
+        }
+        focusables[nextIdx]?.focus();
+        return;
+      }
 
       setNavState(prev => handleSpatialDpad(direction, prev, totalDockButtons));
     },
-    [activeModal, launchedApp, totalDockButtons]
+    [activeModal, totalDockButtons]
   );
 
   // OK / Enter Action Handler
   const handleRemoteEnter = useCallback(() => {
     soundFx.playSelect();
 
-    if (activeModal !== 'none') return;
-    if (launchedApp !== null) {
-      setLaunchedApp(null);
+    if (activeModal !== 'none') {
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (activeEl && activeEl !== document.body) {
+        activeEl.click();
+      }
       return;
     }
 
     if (navState.zone === 'cards') {
       if (navState.cardIndex === 0) setActiveModal('livetv');
-      else if (navState.cardIndex === 1) setActiveModal('setopbox');
+      else if (navState.cardIndex === 1) handleSetopboxDirectLaunch();
       else if (navState.cardIndex === 2) setActiveModal('cricket');
     } else if (navState.zone === 'dock') {
       if (navState.dockIndex < dockApps.length) {
         triggerAppLaunch(dockApps[navState.dockIndex]);
       } else {
+        syncInstalledAndroidApps();
         setActiveModal('apps');
       }
     } else if (navState.zone === 'sidebar') {
       const screens: ScreenView[] = ['home', 'apps', 'settings', 'about'];
       const targetScreen = screens[navState.sidebarIndex];
       setCurrentScreen(targetScreen);
-      if (targetScreen === 'apps') setActiveModal('apps');
+      if (targetScreen === 'apps') {
+        syncInstalledAndroidApps();
+        setActiveModal('apps');
+      }
       if (targetScreen === 'settings') setActiveModal('settings');
       if (targetScreen === 'about') setActiveModal('about');
     } else if (navState.zone === 'header') {
@@ -322,29 +387,30 @@ export default function App() {
       else if (navState.headerIndex === 2) setActiveModal('settings');
       else if (navState.headerIndex === 3) setActiveModal('notifications');
     }
-  }, [navState, activeModal, launchedApp, dockApps, triggerAppLaunch]);
+  }, [
+    navState,
+    activeModal,
+    dockApps,
+    triggerAppLaunch,
+    handleSetopboxDirectLaunch,
+    syncInstalledAndroidApps,
+  ]);
 
   // Back Button Action Handler
   const handleRemoteBack = useCallback(() => {
     soundFx.playBack();
-    if (launchedApp) {
-      setLaunchedApp(null);
-      return;
-    }
     if (activeModal !== 'none') {
       setActiveModal('none');
       setCurrentScreen('home');
       return;
     }
-    // Return to main cards Home
     setCurrentScreen('home');
     setNavState(prev => ({ ...prev, zone: 'cards', cardIndex: 0 }));
-  }, [launchedApp, activeModal]);
+  }, [activeModal]);
 
   // Home Button Action Handler
   const handleRemoteHome = useCallback(() => {
     soundFx.playSelect();
-    setLaunchedApp(null);
     setActiveModal('none');
     setCurrentScreen('home');
     setNavState({
@@ -356,7 +422,7 @@ export default function App() {
     });
   }, []);
 
-  // Keyboard Event Listeners for Physical Remote / Keyboard Arrows
+  // Keyboard Event Listeners for Physical Remote Control
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -367,16 +433,17 @@ export default function App() {
           target.tagName === 'SELECT' ||
           target.isContentEditable);
 
-      // Allow normal typing inside input fields, except Escape to close modal
       if (isInputFocused) {
         if (e.key === 'Escape') {
           e.preventDefault();
           handleRemoteBack();
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          handleDpadMove(e.key === 'ArrowDown' ? 'DOWN' : 'UP');
         }
         return;
       }
 
-      // Guard against accidental double activation on held Enter/Back
       if (e.repeat && (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Backspace')) {
         return;
       }
@@ -399,10 +466,8 @@ export default function App() {
           handleDpadMove('RIGHT');
           break;
         case 'Enter':
-          if (activeModal === 'none') {
-            e.preventDefault();
-            handleRemoteEnter();
-          }
+          e.preventDefault();
+          handleRemoteEnter();
           break;
         case 'Escape':
         case 'Backspace':
@@ -420,7 +485,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, handleDpadMove, handleRemoteEnter, handleRemoteBack, handleRemoteHome]);
+  }, [handleDpadMove, handleRemoteEnter, handleRemoteBack, handleRemoteHome]);
 
   // Toggle Pin/Unpin from Home Dock
   const handleToggleDockPin = (appId: string) => {
@@ -441,28 +506,7 @@ export default function App() {
     );
   };
 
-  // Add custom application shortcut
-  const handleAddCustomShortcut = (newShortcut: Omit<AppShortcut, 'id' | 'dockOrder'>) => {
-    soundFx.playSelect();
-    setApps(prev => {
-      const maxOrder = Math.max(0, ...prev.filter(a => a.inDock).map(a => a.dockOrder));
-      const created: AppShortcut = {
-        ...newShortcut,
-        id: `custom-${Date.now()}`,
-        dockOrder: newShortcut.inDock ? maxOrder + 1 : 99,
-      };
-      return [...prev, created];
-    });
-  };
-
-  // Remove custom application shortcut (never removes preinstalled apps like Netflix/Prime Video)
-  const handleRemoveShortcut = (appId: string) => {
-    soundFx.playBack();
-    setApps(prev => prev.filter(app => app.isPreinstalled || app.id !== appId));
-  };
-
-  // Compute proportional 16:9 landscape TV stage dimensions so 1280x720, 1366x768, 1920x1080,
-  // and high-DPI Android WebView viewports render with identical proportions to IMAGE 1
+  // Compute proportional 16:9 landscape TV stage dimensions
   const scale =
     viewport.width < viewport.height
       ? viewport.width / BASE_TV_WIDTH
@@ -486,6 +530,13 @@ export default function App() {
           renderMode={activeRenderMode}
           customImageUrl={settings.customWallpaperUrl}
         />
+
+        {/* Non-Intrusive TV Status Toast */}
+        {tvToast && (
+          <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-2xl bg-slate-950/95 border border-cyan-400/50 text-cyan-200 text-xs font-extrabold shadow-[0_0_25px_rgba(6,182,212,0.4)]">
+            {tvToast}
+          </div>
+        )}
 
         {/* Top Header */}
         <Header
@@ -511,7 +562,10 @@ export default function App() {
             onSelectScreen={screen => {
               soundFx.playSelect();
               setCurrentScreen(screen);
-              if (screen === 'apps') setActiveModal('apps');
+              if (screen === 'apps') {
+                syncInstalledAndroidApps();
+                setActiveModal('apps');
+              }
               if (screen === 'settings') setActiveModal('settings');
               if (screen === 'about') setActiveModal('about');
             }}
@@ -528,10 +582,12 @@ export default function App() {
               }}
             />
 
-            {/* Card 2: Setopbox */}
+            {/* Card 2: Setopbox (Opens selected HDMI/AV source immediately on click/Enter) */}
             <SetopboxCard
               isFocused={navState.zone === 'cards' && navState.cardIndex === 1}
-              onSelect={() => {
+              selectedPort={settings.defaultSetopboxPort}
+              onSelect={handleSetopboxDirectLaunch}
+              onConfigureSource={() => {
                 soundFx.playSelect();
                 setActiveModal('setopbox');
               }}
@@ -560,18 +616,9 @@ export default function App() {
           onLaunchApp={triggerAppLaunch}
           onOpenMoreApps={() => {
             soundFx.playSelect();
+            syncInstalledAndroidApps();
             setActiveModal('apps');
           }}
-        />
-
-        {/* Virtual TV Remote HUD for testing on desktop / touch */}
-        <VirtualTvRemote
-          onDpad={handleDpadMove}
-          onEnter={handleRemoteEnter}
-          onBack={handleRemoteBack}
-          onHome={handleRemoteHome}
-          soundEnabled={settings.soundEffects}
-          onToggleSound={() => setSettings(s => ({ ...s, soundEffects: !s.soundEffects }))}
         />
 
         {/* Modals & Screens */}
@@ -611,8 +658,7 @@ export default function App() {
               triggerAppLaunch(app);
             }}
             onToggleDockPin={handleToggleDockPin}
-            onAddCustomShortcut={handleAddCustomShortcut}
-            onRemoveShortcut={handleRemoveShortcut}
+            onRefreshInstalledApps={syncInstalledAndroidApps}
           />
         )}
 
@@ -666,11 +712,7 @@ export default function App() {
         {activeModal === 'notifications' && (
           <NotificationsModal onClose={() => setActiveModal('none')} />
         )}
-
-        {/* App Launch Confirmation Modal */}
-        {launchedApp && <AppLaunchModal app={launchedApp} onClose={() => setLaunchedApp(null)} />}
       </div>
     </div>
   );
 }
-
