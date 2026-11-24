@@ -1199,12 +1199,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
 
                   <a
-                    href="/kp-tv-launcher-debug.apk?v=2.6.0-b6"
-                    download="kp-tv-launcher-v2.6.0-debug.apk"
+                    href="/kp-tv-launcher-debug.apk?v=2.7.0-b7"
+                    download="kp-tv-launcher-v2.7.0-debug.apk"
                     className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs font-extrabold flex items-center space-x-1.5 shadow-[0_0_15px_rgba(16,185,129,0.4)] cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Direct Download APK (v2.6.0)</span>
+                    <span>Direct Download APK (v2.7.0)</span>
                   </a>
                 </div>
 
@@ -1356,12 +1356,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="flex flex-col sm:flex-row gap-2.5">
                     <a
-                      href="/kp-tv-launcher-debug.apk?v=2.6.0-b6"
-                      download="kp-tv-launcher-v2.6.0-debug.apk"
+                      href="/kp-tv-launcher-debug.apk?v=2.7.0-b7"
+                      download="kp-tv-launcher-v2.7.0-debug.apk"
                       className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs shadow-[0_0_25px_rgba(16,185,129,0.5)] flex items-center space-x-2 transition-all cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
-                      <span>Download Updated APK (v2.6.0)</span>
+                      <span>Download Updated APK (v2.7.0)</span>
                     </a>
                     <button
                       onClick={handleDownloadAndroidZip}

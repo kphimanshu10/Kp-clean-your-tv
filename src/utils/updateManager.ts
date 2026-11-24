@@ -24,8 +24,8 @@ export interface VersionManifest {
 
 export const INSTALLED_APP_VERSION = {
   packageName: 'com.kptv.launcher',
-  versionName: '2.6.0',
-  versionCode: 6,
+  versionName: '2.7.0',
+  versionCode: 7,
 };
 
 export async function computeBufferSha256Hex(buffer: ArrayBuffer): Promise<string> {

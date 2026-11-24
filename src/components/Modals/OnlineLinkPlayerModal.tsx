@@ -8,8 +8,6 @@ import {
   History,
   Trash2,
   Play,
-  Sparkles,
-  CheckCircle2,
   Maximize2,
 } from 'lucide-react';
 import { VideoStreamPlayer } from '../VideoStreamPlayer';
@@ -33,12 +31,11 @@ const STORAGE_ONLINE_LINKS_KEY = 'kptv_online_link_history_v1';
 
 function detectStreamFormatLabel(url: string): string {
   const lower = url.toLowerCase();
-  if (lower.includes('.m3u8')) return 'HLS / M3U8';
-  if (lower.includes('.mp4')) return 'MP4 Video';
-  if (lower.includes('.webm')) return 'WebM Video';
-  if (lower.includes('.ts')) return 'MPEG-TS';
-  if (lower.includes('.m3u')) return 'M3U Stream';
-  return 'HTTP Stream';
+  if (lower.includes('.m3u8')) return 'HLS';
+  if (lower.includes('.mp4')) return 'MP4';
+  if (lower.includes('.webm')) return 'WebM';
+  if (lower.includes('.ts')) return 'TS';
+  return 'Stream';
 }
 
 export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
@@ -65,13 +62,12 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
   });
 
   const [activeTitle, setActiveTitle] = useState<string>(() => {
-    if (initialUrl) return 'Direct Online Stream';
-    return historyItems[0]?.title || 'No Stream Loaded';
+    if (initialUrl) return 'Online Stream';
+    return historyItems[0]?.title || 'Link Player';
   });
 
   const [listFilter, setListFilter] = useState<'all' | 'favorites'>('all');
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
-  const [statusNote, setStatusNote] = useState<string | null>(null);
   const [fullscreenTrigger, setFullscreenTrigger] = useState<number>(0);
 
   useEffect(() => {
@@ -84,10 +80,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
 
   const recordAndPlayUrl = (rawUrl: string, openInFullscreen = false) => {
     const check = validateHttpUrl(rawUrl);
-    if (!check.valid) {
-      setStatusNote(check.error || 'Please enter a valid HTTP/HTTPS stream URL.');
-      return;
-    }
+    if (!check.valid) return;
 
     const clean = check.normalized;
     const guessedTitle =
@@ -96,7 +89,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
         .pop()
         ?.split('?')[0]
         ?.replace(/\.(m3u8|mp4|webm|ts|m3u)$/i, '')
-        ?.replace(/[-_]/g, ' ') || 'Online Video Stream';
+        ?.replace(/[-_]/g, ' ') || 'Video Stream';
 
     const format = detectStreamFormatLabel(clean);
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -104,7 +97,6 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
     setActiveStreamUrl(clean);
     setActiveTitle(guessedTitle);
     setUrlInput(clean);
-    setStatusNote(`Playing ${format}: ${guessedTitle}`);
     if (openInFullscreen) {
       setFullscreenTrigger(n => n + 1);
     }
@@ -141,7 +133,6 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
 
   const clearNonFavorites = () => {
     setHistoryItems(prev => prev.filter(item => item.isFavorite));
-    setStatusNote('Cleared recent playback history (kept Favorites).');
   };
 
   const displayedList =
@@ -150,65 +141,42 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
       : historyItems;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-2xl p-6 select-none">
-      <div className="relative w-full max-w-6xl h-[88vh] rounded-3xl bg-slate-900/95 border border-cyan-500/35 shadow-[0_0_55px_rgba(6,182,212,0.3)] flex flex-col overflow-hidden">
-        {/* Top Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-slate-950/75">
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 rounded-2xl bg-orange-500/20 border border-orange-400/40 text-orange-400">
-              <PlayCircle className="w-6 h-6" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-2xl p-5 select-none">
+      <div className="relative w-full max-w-6xl h-[86vh] rounded-3xl bg-slate-900/95 border border-cyan-500/35 shadow-[0_0_55px_rgba(6,182,212,0.3)] flex flex-col overflow-hidden">
+        {/* Compact Header + URL Input Bar */}
+        <div className="px-5 py-3.5 bg-slate-950/85 border-b border-white/10 flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center space-x-2 mr-2">
+            <div className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-400">
+              <PlayCircle className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h2 className="text-xl font-black text-white">
-                  KP TV – Online Link Player (VLC-Style)
-                </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-orange-950/80 text-orange-300 border border-orange-500/40">
-                  Direct Stream Engine
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Play direct MP4, M3U8, HLS, WebM & HTTP streams with speed, aspect ratio, audio/subtitle tracks & QR input
-              </p>
-            </div>
+            <h2 className="text-base font-black text-white">Link Player</h2>
           </div>
 
-          <button
-            onClick={onClose}
-            aria-label="Close Online Link Player"
-            className="p-2.5 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-red-600 focus:ring-4 focus:ring-cyan-400 transition-all cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Stream URL Input Bar */}
-        <div className="px-6 py-3.5 bg-slate-950/85 border-b border-white/10 flex flex-wrap items-center gap-2.5">
           <form
             onSubmit={e => {
               e.preventDefault();
               recordAndPlayUrl(urlInput);
             }}
-            className="flex-1 min-w-[260px] flex items-center gap-2"
+            className="flex-1 min-w-[240px] flex items-center gap-2"
           >
             <div className="relative flex-1">
-              <Link2 className="w-4 h-4 text-cyan-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Link2 className="w-4 h-4 text-cyan-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="url"
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
-                placeholder="Enter or Paste Direct Stream URL (https://.../video.m3u8 or .mp4)"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-mono border border-slate-700 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/40"
+                placeholder="Paste stream link (https://.../video.m3u8 or .mp4)"
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-mono border border-slate-700 focus:outline-none focus:border-cyan-400"
                 required
               />
             </div>
 
             <button
               type="submit"
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-400 hover:to-amber-500 focus:ring-2 focus:ring-amber-300 text-white text-xs font-extrabold flex items-center space-x-1.5 shrink-0 cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 focus:ring-2 focus:ring-cyan-300 text-white text-xs font-extrabold flex items-center space-x-1.5 shrink-0 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Play Stream</span>
+              <span>Play</span>
             </button>
 
             <button
@@ -220,7 +188,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                   setFullscreenTrigger(n => n + 1);
                 }
               }}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 focus:ring-2 focus:ring-cyan-300 text-white text-xs font-extrabold flex items-center space-x-1.5 shrink-0 shadow-[0_0_15px_rgba(6,182,212,0.4)] cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 focus:ring-2 focus:ring-cyan-300 text-white text-xs font-extrabold flex items-center space-x-1.5 shrink-0 cursor-pointer"
             >
               <Maximize2 className="w-3.5 h-3.5" />
               <span>Full Screen Play</span>
@@ -230,24 +198,24 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
           <button
             type="button"
             onClick={() => setShowQrModal(true)}
-            className="px-4 py-2.5 rounded-xl bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-400/50 focus:ring-2 focus:ring-cyan-300 text-cyan-200 text-xs font-extrabold flex items-center space-x-1.5 shrink-0 cursor-pointer"
+            className="px-3.5 py-2 rounded-xl bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-400/50 focus:ring-2 focus:ring-cyan-300 text-cyan-200 text-xs font-extrabold flex items-center space-x-1.5 shrink-0 cursor-pointer"
           >
             <QrCode className="w-4 h-4 text-cyan-400" />
-            <span>Universal QR Input</span>
+            <span>QR Link</span>
           </button>
 
-          {statusNote && (
-            <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold flex items-center space-x-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="truncate max-w-[220px]">{statusNote}</span>
-            </div>
-          )}
+          <button
+            onClick={onClose}
+            aria-label="Close Link Player"
+            className="p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-red-600 focus:ring-2 focus:ring-cyan-400 transition-all cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Main Body: Video Player + History / Favorites Sidebar */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Left: Video Player */}
-          <div className="flex-[1.65] p-5 bg-black/80 flex flex-col justify-between border-r border-white/10 overflow-hidden">
+          <div className="flex-[1.7] p-4 bg-black/80 flex flex-col justify-between border-r border-white/10 overflow-hidden">
             {activeStreamUrl ? (
               <VideoStreamPlayer
                 streamUrl={activeStreamUrl}
@@ -258,29 +226,24 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                 className="flex-1 w-full"
               />
             ) : (
-              <div className="flex-1 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center p-8 text-center">
-                <div className="w-16 h-16 rounded-3xl bg-orange-500/15 border border-orange-500/40 flex items-center justify-center text-orange-400 mb-4">
-                  <PlayCircle className="w-9 h-9" />
-                </div>
-                <h3 className="text-lg font-black text-white mb-1">
-                  Ready to Play Direct Network Streams
+              <div className="flex-1 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center p-6 text-center">
+                <PlayCircle className="w-12 h-12 text-cyan-400 mb-3 opacity-80" />
+                <h3 className="text-base font-black text-white mb-4">
+                  Paste Stream URL or Scan QR Link
                 </h3>
-                <p className="text-xs text-slate-400 max-w-md mb-5">
-                  Paste any direct video or live stream link (.m3u8, .mp4, .webm, .ts) above, or use the Universal QR Code button to beam a link from your mobile phone.
-                </p>
                 <button
                   type="button"
                   onClick={() => setShowQrModal(true)}
-                  className="px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-xs font-extrabold flex items-center space-x-2 shadow-[0_0_25px_rgba(6,182,212,0.4)] cursor-pointer"
+                  className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-xs font-extrabold flex items-center space-x-2 cursor-pointer"
                 >
                   <QrCode className="w-4 h-4" />
-                  <span>Send Video Link via Phone QR</span>
+                  <span>Scan Phone QR</span>
                 </button>
               </div>
             )}
           </div>
 
-          {/* Right: Recent Links & Favorite URLs */}
+          {/* Right: Recent & Favorites */}
           <div className="flex-1 p-4 bg-slate-900/70 flex flex-col overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div className="flex space-x-2">
@@ -306,7 +269,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                   }`}
                 >
                   <Star className="w-3.5 h-3.5" />
-                  <span>Favorites ({historyItems.filter(i => i.isFavorite).length})</span>
+                  <span>Saved ({historyItems.filter(i => i.isFavorite).length})</span>
                 </button>
               </div>
 
@@ -314,7 +277,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                 <button
                   type="button"
                   onClick={clearNonFavorites}
-                  title="Clear non-favorite history"
+                  title="Clear history"
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300 text-xs cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -324,13 +287,8 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
 
             <div className="flex-1 overflow-y-auto space-y-2 pt-3 pr-1">
               {displayedList.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 text-xs">
-                  <Sparkles className="w-6 h-6 text-cyan-400 mb-2 opacity-60" />
-                  <p>
-                    {listFilter === 'favorites'
-                      ? 'No favorite stream URLs starred yet.'
-                      : 'Your played online video links will be saved here for instant replay.'}
-                  </p>
+                <div className="h-full flex items-center justify-center text-center p-4 text-slate-500 text-xs">
+                  No saved links
                 </div>
               ) : (
                 displayedList.map(item => {
@@ -338,7 +296,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                   return (
                     <div
                       key={item.id}
-                      className={`p-3 rounded-2xl border flex items-center justify-between gap-2 transition-all ${
+                      className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 transition-all ${
                         isPlayingNow
                           ? 'bg-blue-600/30 border-cyan-400'
                           : 'bg-slate-800/50 border-white/5 hover:bg-slate-800'
@@ -357,9 +315,6 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                             {item.format}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-400 font-mono truncate mt-0.5">
-                          {item.url}
-                        </div>
                       </button>
 
                       <div className="flex items-center space-x-1 shrink-0">
@@ -367,11 +322,10 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                           type="button"
                           onClick={() => recordAndPlayUrl(item.url, true)}
                           title="Full Screen Play"
-                          aria-label={`Play ${item.title} in Full Screen`}
                           className="px-2 py-1 rounded-lg bg-cyan-600/25 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 text-[10px] font-extrabold flex items-center space-x-1 transition-colors cursor-pointer"
                         >
                           <Maximize2 className="w-3 h-3" />
-                          <span>Full Screen</span>
+                          <span>Full</span>
                         </button>
                         <button
                           type="button"
@@ -384,7 +338,7 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
                           }`}
                         >
                           <Star
-                            className={`w-4 h-4 ${item.isFavorite ? 'fill-yellow-400' : ''}`}
+                            className={`w-3.5 h-3.5 ${item.isFavorite ? 'fill-yellow-400' : ''}`}
                           />
                         </button>
                         <button
@@ -404,12 +358,10 @@ export const OnlineLinkPlayerModal: React.FC<OnlineLinkPlayerModalProps> = ({
           </div>
         </div>
 
-        {/* Universal QR Modal */}
         {showQrModal && (
           <UniversalQrUrlModal
             contextType="online-video"
-            title="Online Link Player – Universal QR Input"
-            subtitle="Scan the QR code with your phone to send any MP4, M3U8, or HLS video stream link directly to the player."
+            title="Scan QR to Send Video Link"
             placeholder="https://example.com/live/stream.m3u8"
             initialUrl={urlInput}
             onApplyUrl={url => recordAndPlayUrl(url)}

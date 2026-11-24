@@ -10,7 +10,6 @@ import { LiveTvCard } from './components/HeroCards/LiveTvCard';
 import { SetopboxCard } from './components/HeroCards/SetopboxCard';
 import { CricketScoreCard } from './components/HeroCards/CricketScoreCard';
 import { BottomDock } from './components/BottomDock';
-import { LiveTvModal } from './components/Modals/LiveTvModal';
 import { OnlineLinkPlayerModal } from './components/Modals/OnlineLinkPlayerModal';
 import { SetopboxModal } from './components/Modals/SetopboxModal';
 import { CricketScoreModal } from './components/Modals/CricketScoreModal';
@@ -210,7 +209,6 @@ export default function App() {
   // Active Modals
   const [activeModal, setActiveModal] = useState<
     | 'none'
-    | 'livetv'
     | 'onlineplayer'
     | 'setopbox'
     | 'cricket'
@@ -222,7 +220,7 @@ export default function App() {
     | 'wallpaper'
   >('none');
 
-  const [onlinePlayerInitialUrl, setOnlinePlayerInitialUrl] = useState<string>('');
+  const [onlinePlayerInitialUrl] = useState<string>('');
 
   // Refresh Live Cricket Score
   const refreshCricketScores = useCallback(async (configOverride?: CricketApiConfig) => {
@@ -315,23 +313,29 @@ export default function App() {
     [showTvToast]
   );
 
-  // Direct Setopbox Action: Clicking Setopbox opens the already-selected source (HDMI 1, HDMI 2, or AV) immediately
-  const handleSetopboxDirectLaunch = useCallback(() => {
-    soundFx.playSelect();
-    const activePort = settings.defaultSetopboxPort || 'hdmi1';
-    if (
-      typeof window !== 'undefined' &&
-      window.AndroidTvBridge &&
-      typeof window.AndroidTvBridge.switchHdmiInput === 'function'
-    ) {
-      const switched = window.AndroidTvBridge.switchHdmiInput(activePort);
-      if (switched) {
-        showTvToast(`Switched TV Source to ${activePort.toUpperCase()}`);
-        return;
+  // Direct Setopbox Action: Clicking Setopbox or a source pill opens the selected source (HDMI 1, HDMI 2, or AV) immediately
+  const handleSetopboxDirectLaunch = useCallback(
+    (portOverride?: 'hdmi1' | 'hdmi2' | 'av') => {
+      soundFx.playSelect();
+      const activePort = portOverride || settings.defaultSetopboxPort || 'hdmi1';
+      if (portOverride && portOverride !== settings.defaultSetopboxPort) {
+        setSettings(s => ({ ...s, defaultSetopboxPort: portOverride }));
       }
-    }
-    setActiveModal('setopbox');
-  }, [settings.defaultSetopboxPort, showTvToast]);
+      if (
+        typeof window !== 'undefined' &&
+        window.AndroidTvBridge &&
+        typeof window.AndroidTvBridge.switchHdmiInput === 'function'
+      ) {
+        const switched = window.AndroidTvBridge.switchHdmiInput(activePort);
+        if (switched) {
+          showTvToast(`Switched TV Source to ${activePort.toUpperCase()}`);
+          return;
+        }
+      }
+      showTvToast(`Setopbox Source: ${activePort.toUpperCase()}`);
+    },
+    [settings.defaultSetopboxPort, showTvToast]
+  );
 
   // Reorder Dock Apps Left / Right
   const handleReorderDockApp = useCallback((appId: string, direction: 'left' | 'right') => {
@@ -381,7 +385,17 @@ export default function App() {
         } else {
           nextIdx = currentIdx <= 0 ? focusables.length - 1 : currentIdx - 1;
         }
-        focusables[nextIdx]?.focus();
+        const targetEl = focusables[nextIdx];
+        if (targetEl) {
+          targetEl.focus({ preventScroll: true });
+          if (activeModal !== 'apps') {
+            targetEl.scrollIntoView({
+              behavior: 'smooth',
+              block: 'nearest',
+              inline: 'nearest',
+            });
+          }
+        }
         return;
       }
 
@@ -403,7 +417,7 @@ export default function App() {
     }
 
     if (navState.zone === 'cards') {
-      if (navState.cardIndex === 0) setActiveModal('livetv');
+      if (navState.cardIndex === 0) setActiveModal('onlineplayer');
       else if (navState.cardIndex === 1) handleSetopboxDirectLaunch();
       else if (navState.cardIndex === 2) setActiveModal('cricket');
     } else if (navState.zone === 'dock') {
@@ -535,7 +549,7 @@ export default function App() {
         case 'MediaPlayPause':
           e.preventDefault();
           if (activeModal === 'none') {
-            setActiveModal('livetv');
+            setActiveModal('onlineplayer');
           }
           break;
         default:
@@ -613,11 +627,6 @@ export default function App() {
           onSelectWifi={() => setActiveModal('wifi')}
           onSelectSettings={() => setActiveModal('settings')}
           onSelectNotifications={() => setActiveModal('notifications')}
-          onSelectOnlinePlayer={() => {
-            soundFx.playSelect();
-            setOnlinePlayerInitialUrl('');
-            setActiveModal('onlineplayer');
-          }}
         />
 
         {/* Main Body: Left Sidebar + 3 Hero Cards */}
@@ -641,12 +650,12 @@ export default function App() {
 
           {/* 3 Main Hero Cards in 16:9 TV landscape row */}
           <main className="flex-1 flex items-center space-x-6 py-2 overflow-hidden">
-            {/* Card 1: Live TV */}
+            {/* Card 1: Link Player (Online Stream Player) */}
             <LiveTvCard
               isFocused={navState.zone === 'cards' && navState.cardIndex === 0}
               onSelect={() => {
                 soundFx.playSelect();
-                setActiveModal('livetv');
+                setActiveModal('onlineplayer');
               }}
             />
 
@@ -654,7 +663,8 @@ export default function App() {
             <SetopboxCard
               isFocused={navState.zone === 'cards' && navState.cardIndex === 1}
               selectedPort={settings.defaultSetopboxPort}
-              onSelect={handleSetopboxDirectLaunch}
+              onSelect={() => handleSetopboxDirectLaunch()}
+              onQuickSwitchPort={port => handleSetopboxDirectLaunch(port)}
               onConfigureSource={() => {
                 soundFx.playSelect();
                 setActiveModal('setopbox');
@@ -690,16 +700,6 @@ export default function App() {
         />
 
         {/* Modals & Screens */}
-        {activeModal === 'livetv' && (
-          <LiveTvModal
-            onClose={() => setActiveModal('none')}
-            onOpenOnlineLinkPlayer={initialUrl => {
-              setOnlinePlayerInitialUrl(initialUrl || '');
-              setActiveModal('onlineplayer');
-            }}
-          />
-        )}
-
         {activeModal === 'onlineplayer' && (
           <OnlineLinkPlayerModal
             initialUrl={onlinePlayerInitialUrl}

@@ -15,7 +15,6 @@ import {
   CloudLightning,
   RefreshCw,
   MapPin,
-  PlayCircle,
   HardDrive,
 } from 'lucide-react';
 import { formatTvClock, formatTvDate } from '../utils/launcherLogic';
@@ -206,19 +205,8 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: Online Link Player Shortcut + Quick Status + Weather + Action Icons */}
+      {/* Right: Quick Status + Weather + Action Icons */}
       <div className="flex items-center space-x-3">
-        {/* Online Link Player Direct Home Shortcut */}
-        {onSelectOnlinePlayer && (
-          <button
-            onClick={onSelectOnlinePlayer}
-            title="Open VLC-Style Online Link Player"
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-2xl bg-orange-950/70 hover:bg-orange-900/80 border border-orange-400/40 text-orange-200 text-xs font-extrabold shadow-[0_4px_15px_rgba(0,0,0,0.4)] transition-all cursor-pointer focus:ring-4 focus:ring-cyan-400"
-          >
-            <PlayCircle className="w-4 h-4 text-orange-400" />
-            <span>Online Player</span>
-          </button>
-        )}
 
         {/* Quick Storage & Network Status Pill */}
         {showQuickStatusBar && (
