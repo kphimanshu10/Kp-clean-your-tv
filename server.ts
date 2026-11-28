@@ -329,7 +329,7 @@ async function startServer() {
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
     res.setHeader(
       'Content-Disposition',
-      'attachment; filename="kp-tv-launcher-v2.7.0-debug.apk"'
+      'attachment; filename="kp-tv-launcher-v2.8.0-debug.apk"'
     );
     res.sendFile(path.join(__dirname, 'public', 'kp-tv-launcher-debug.apk'));
   });

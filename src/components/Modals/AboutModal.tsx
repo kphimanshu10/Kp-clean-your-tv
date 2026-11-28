@@ -17,7 +17,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose }) => {
             <div>
               <h2 className="text-xl font-black text-white">KP TV Launcher</h2>
               <p className="text-xs text-cyan-300 font-semibold">
-                v2.7.0 (Build 7) • Smart TV Launcher
+                v2.8.0 (Build 8) • Smart TV Launcher
               </p>
             </div>
           </div>
@@ -59,12 +59,12 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose }) => {
 
         <div className="pt-3 border-t border-white/10 flex items-center justify-between">
           <a
-            href="/kp-tv-launcher-debug.apk?v=2.7.0-b7"
-            download="kp-tv-launcher-v2.7.0-debug.apk"
+            href="/kp-tv-launcher-debug.apk?v=2.8.0-b8"
+            download="kp-tv-launcher-v2.8.0-debug.apk"
             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download APK (v2.7.0)</span>
+            <span>Download APK (v2.8.0)</span>
           </a>
           <button
             onClick={onClose}

@@ -183,6 +183,8 @@ export interface AndroidTvBridgeInterface {
   canRequestPackageInstalls?: () => boolean;
   openUnknownSourcesSettings?: () => boolean;
   verifyAndInstallApkUrl?: (apkUrl: string, expectedSha256: string) => string;
+  isDefaultHomeLauncher?: () => boolean;
+  requestDefaultHomeLauncher?: () => boolean;
 }
 
 declare global {

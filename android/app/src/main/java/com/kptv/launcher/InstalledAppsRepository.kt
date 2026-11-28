@@ -55,15 +55,7 @@ class InstalledAppsRepository(private val context: Context) {
             if (pkg == selfPkg || discovered.containsKey(pkg)) continue
 
             val label = info.loadLabel(pm)?.toString()?.trim().takeUnless { it.isNullOrEmpty() } ?: pkg
-            val icon = try {
-                pm.getApplicationIcon(pkg)
-            } catch (_: Exception) {
-                try {
-                    info.loadIcon(pm)
-                } catch (_: Exception) {
-                    pm.defaultActivityIcon
-                }
-            }
+            val icon = loadBestAppDrawable(pm, pkg, info)
 
             val priority = getPreferredDockPriority(pkg, label)
             val isPinned = if (orderedPinnedList != null) {
@@ -93,6 +85,43 @@ class InstalledAppsRepository(private val context: Context) {
         )
     }
 
+    private fun loadBestAppDrawable(pm: PackageManager, pkg: String, info: ResolveInfo? = null): Drawable {
+        if (info != null) {
+            try {
+                val actIcon = info.activityInfo?.loadIcon(pm)
+                if (actIcon != null) return actIcon
+            } catch (_: Exception) {
+            }
+            try {
+                val resIcon = info.loadIcon(pm)
+                if (resIcon != null) return resIcon
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            pm.getApplicationIcon(pkg)
+        } catch (_: Exception) {
+            pm.defaultActivityIcon
+        }
+    }
+
+    fun getAppIconPngStream(packageName: String): java.io.ByteArrayInputStream? {
+        val pm = context.packageManager
+        val drawable = loadBestAppDrawable(pm, packageName, null)
+        return try {
+            val size = 96
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+            val out = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 92, out)
+            java.io.ByteArrayInputStream(out.toByteArray())
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun toJsonArrayString(): String {
         val arr = JSONArray()
         for (app in getAllInstalledApps()) {
@@ -100,10 +129,8 @@ class InstalledAppsRepository(private val context: Context) {
             obj.put("label", app.label)
             obj.put("packageName", app.packageName)
             obj.put("activityName", app.activityName ?: "")
-            val iconUrl = drawableToDataUrl(app.icon)
-            if (iconUrl != null) {
-                obj.put("iconDataUrl", iconUrl)
-            }
+            val iconUrl = drawableToDataUrl(app.icon) ?: "https://kptv.local/app-icon/${app.packageName}.png"
+            obj.put("iconDataUrl", iconUrl)
             arr.put(obj)
         }
         return arr.toString()
@@ -112,7 +139,7 @@ class InstalledAppsRepository(private val context: Context) {
     private fun drawableToDataUrl(drawable: Drawable?): String? {
         if (drawable == null) return null
         return try {
-            val size = 64
+            val size = 96
             val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             drawable.setBounds(0, 0, size, size)

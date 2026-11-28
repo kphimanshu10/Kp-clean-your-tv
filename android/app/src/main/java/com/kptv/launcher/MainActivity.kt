@@ -1,8 +1,11 @@
 package com.kptv.launcher
 
 import android.annotation.SuppressLint
+import android.app.role.RoleManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -58,6 +61,9 @@ class MainActivity : AppCompatActivity() {
         private const val LOCAL_HOST = "kptv.local"
         private const val START_URL = "https://kptv.local/index.html"
         private const val QR_SERVER_PORT = 8765
+        private const val REQ_CODE_DEFAULT_HOME = 4010
+        private const val PREFS_NAME = "kptv_launcher_prefs"
+        private const val KEY_FIRST_RUN_HOME_ASKED = "first_run_home_asked"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,8 +80,103 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         if (savedInstanceState == null) {
             binding.kpTvWebview.loadUrl(START_URL)
+            maybePromptDefaultHomeOnFirstRun()
         } else {
             binding.kpTvWebview.restoreState(savedInstanceState)
+        }
+    }
+
+    private fun maybePromptDefaultHomeOnFirstRun() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val alreadyAsked = prefs.getBoolean(KEY_FIRST_RUN_HOME_ASKED, false)
+        if (!alreadyAsked && !checkIsDefaultHomeLauncher()) {
+            prefs.edit().putBoolean(KEY_FIRST_RUN_HOME_ASKED, true).apply()
+            // On Android 10+ (API 29+), RoleManager shows the native "Set KP TV as default Home app?" dialog
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val roleManager = getSystemService(RoleManager::class.java)
+                    if (roleManager != null &&
+                        roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                        !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+                    ) {
+                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(intent, REQ_CODE_DEFAULT_HOME)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    fun checkIsDefaultHomeLauncher(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val roleManager = getSystemService(RoleManager::class.java)
+                if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                    if (roleManager.isRoleHeld(RoleManager.ROLE_HOME)) return true
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+            }
+            val resolveInfo = packageManager.resolveActivity(
+                homeIntent,
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+            val currentHomePkg = resolveInfo?.activityInfo?.packageName
+            currentHomePkg == packageName
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun requestSetDefaultHomeLauncher(): Boolean {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_FIRST_RUN_HOME_ASKED, true).apply()
+
+        // 1. Android 10+ (API 29+) Official RoleManager HOME role dialog
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val roleManager = getSystemService(RoleManager::class.java)
+                if (roleManager != null &&
+                    roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                    !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+                ) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(intent, REQ_CODE_DEFAULT_HOME)
+                    return true
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        // 2. Android System Home App Settings screen
+        try {
+            val homeSettingsIntent = Intent(Settings.ACTION_HOME_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (homeSettingsIntent.resolveActivity(packageManager) != null) {
+                startActivity(homeSettingsIntent)
+                return true
+            }
+        } catch (_: Exception) {
+        }
+
+        // 3. Fallback: Explicit HOME intent chooser so user can pick "KP TV" -> "Always"
+        return try {
+            val homeChooser = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(Intent.createChooser(homeChooser, "Select KP TV as Default Launcher"))
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -253,6 +354,19 @@ class MainActivity : AppCompatActivity() {
 
                 var relPath = uri.path?.removePrefix("/") ?: "index.html"
                 if (relPath.isEmpty()) relPath = "index.html"
+
+                if (relPath.startsWith("app-icon/")) {
+                    val pkg = relPath.removePrefix("app-icon/").removeSuffix(".png").trim()
+                    val pngStream = appsRepo.getAppIconPngStream(pkg)
+                    if (pngStream != null) {
+                        val headers = mapOf(
+                            "Access-Control-Allow-Origin" to "*",
+                            "Cache-Control" to "public, max-age=3600"
+                        )
+                        return WebResourceResponse("image/png", null, 200, "OK", headers, pngStream)
+                    }
+                }
+
                 val assetPath = "www/$relPath"
 
                 return try {
@@ -371,6 +485,16 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun isNativeAndroid(): Boolean = true
+
+        @JavascriptInterface
+        fun isDefaultHomeLauncher(): Boolean {
+            return checkIsDefaultHomeLauncher()
+        }
+
+        @JavascriptInterface
+        fun requestDefaultHomeLauncher(): Boolean {
+            return requestSetDefaultHomeLauncher()
+        }
 
         @JavascriptInterface
         fun getInstalledApps(): String {

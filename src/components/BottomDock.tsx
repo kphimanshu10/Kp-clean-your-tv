@@ -10,19 +10,7 @@ interface BottomDockProps {
   onOpenMoreApps: () => void;
 }
 
-export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' = 'dock') => {
-  const iconBoxClass = size === 'dock' ? 'w-9 h-9 rounded-xl' : 'w-12 h-12 rounded-2xl';
-
-  if (app.customIcon) {
-    return (
-      <img
-        src={app.customIcon}
-        alt={app.name}
-        className={`${iconBoxClass} object-contain bg-slate-900/90 p-1 shadow-md shrink-0 border border-white/15`}
-      />
-    );
-  }
-
+const renderBuiltInFallbackIcon = (app: AppShortcut, iconBoxClass: string) => {
   switch (app.iconType) {
     case 'netmirror':
       return (
@@ -35,7 +23,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'hotstar':
       return (
         <div
-          className={`${iconBoxClass} bg-gradient-to-br from-slate-900 to-blue-950 border border-yellow-400/40 flex items-center justify-center shadow-[0_0_12px_rgba(250,204,21,0.4)] shrink-0`}
+          className={`${iconBoxClass} bg-gradient-to-br from-slate-900 to-blue-950 border border-yellow-400/50 flex items-center justify-center shadow-[0_0_12px_rgba(250,204,21,0.45)] shrink-0`}
         >
           <span className="text-yellow-400 text-lg leading-none">★</span>
         </div>
@@ -43,7 +31,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'youtube':
       return (
         <div
-          className={`${iconBoxClass} bg-[#FF0000] flex items-center justify-center shadow-[0_2px_10px_rgba(255,0,0,0.5)] shrink-0`}
+          className={`${iconBoxClass} bg-[#FF0000] border border-white/30 flex items-center justify-center shadow-[0_2px_10px_rgba(255,0,0,0.5)] shrink-0`}
         >
           <div className="w-0 h-0 border-y-[5px] border-y-transparent border-l-[9px] border-l-white ml-0.5" />
         </div>
@@ -51,7 +39,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'airtel':
       return (
         <div
-          className={`${iconBoxClass} bg-[#E11D48] flex items-center justify-center shadow-[0_0_10px_rgba(225,29,72,0.6)] shrink-0`}
+          className={`${iconBoxClass} bg-[#E11D48] border border-white/30 flex items-center justify-center shadow-[0_0_10px_rgba(225,29,72,0.6)] shrink-0`}
         >
           <div className="w-4 h-4 rounded-full border-2 border-white" />
         </div>
@@ -59,7 +47,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'netflix':
       return (
         <div
-          className={`${iconBoxClass} bg-black border border-red-600/50 flex items-center justify-center shadow-[0_0_10px_rgba(229,9,20,0.6)] shrink-0`}
+          className={`${iconBoxClass} bg-black border border-red-600/60 flex items-center justify-center shadow-[0_0_10px_rgba(229,9,20,0.6)] shrink-0`}
         >
           <span className="text-xl font-black text-[#E50914] font-sans">N</span>
         </div>
@@ -67,7 +55,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'prime':
       return (
         <div
-          className={`${iconBoxClass} bg-[#00A8E1] flex items-center justify-center shadow-[0_0_10px_rgba(0,168,225,0.5)] shrink-0`}
+          className={`${iconBoxClass} bg-[#00A8E1] border border-white/30 flex items-center justify-center shadow-[0_0_10px_rgba(0,168,225,0.5)] shrink-0`}
         >
           <span className="text-[10px] font-black text-white uppercase tracking-tighter">prime</span>
         </div>
@@ -75,7 +63,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'spotify':
       return (
         <div
-          className={`${iconBoxClass} bg-[#1DB954] flex items-center justify-center shadow-md shrink-0`}
+          className={`${iconBoxClass} bg-[#1DB954] border border-white/30 flex items-center justify-center shadow-md shrink-0`}
         >
           <Music className="w-5 h-5 text-black stroke-[2.5]" />
         </div>
@@ -84,7 +72,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'mxplayer':
       return (
         <div
-          className={`${iconBoxClass} flex items-center justify-center shadow-md shrink-0`}
+          className={`${iconBoxClass} border border-white/30 flex items-center justify-center shadow-md shrink-0`}
           style={{ backgroundColor: app.accentColor || '#f97316' }}
         >
           <PlayCircle className="w-5 h-5 text-white stroke-[2.2]" />
@@ -93,7 +81,7 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'browser':
       return (
         <div
-          className={`${iconBoxClass} bg-indigo-600 flex items-center justify-center shadow-md shrink-0`}
+          className={`${iconBoxClass} bg-indigo-600 border border-white/30 flex items-center justify-center shadow-md shrink-0`}
         >
           <Globe className="w-5 h-5 text-white" />
         </div>
@@ -101,21 +89,70 @@ export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' =
     case 'files':
       return (
         <div
-          className={`${iconBoxClass} bg-emerald-600 flex items-center justify-center shadow-md shrink-0`}
+          className={`${iconBoxClass} bg-emerald-600 border border-white/30 flex items-center justify-center shadow-md shrink-0`}
         >
           <Folder className="w-5 h-5 text-white" />
         </div>
       );
-    default:
+    default: {
+      const initial = (app.name || 'A').trim().charAt(0).toUpperCase();
       return (
         <div
-          className={`${iconBoxClass} flex items-center justify-center text-white font-black shadow-md shrink-0 border border-white/15`}
+          className={`${iconBoxClass} flex items-center justify-center text-white font-black shadow-md shrink-0 border border-white/30`}
           style={{ backgroundColor: app.accentColor || '#0284c7' }}
         >
-          <Tv className="w-5 h-5 text-white" />
+          {initial ? (
+            <span className="text-base font-black text-white drop-shadow">{initial}</span>
+          ) : (
+            <Tv className="w-5 h-5 text-white" />
+          )}
         </div>
       );
+    }
   }
+};
+
+const AppIconView: React.FC<{ app: AppShortcut; size: 'dock' | 'drawer' }> = ({ app, size }) => {
+  const iconBoxClass = size === 'dock' ? 'w-10 h-10 rounded-xl' : 'w-12 h-12 rounded-2xl';
+  const isNativeWebView =
+    typeof window !== 'undefined' && Boolean(window.AndroidTvBridge?.isNativeAndroid?.());
+  const nativeStreamUrl =
+    isNativeWebView && app.packageName
+      ? `https://kptv.local/app-icon/${encodeURIComponent(app.packageName)}.png`
+      : '';
+
+  const primarySrc = app.customIcon || nativeStreamUrl;
+  const [activeSrc, setActiveSrc] = React.useState<string>(primarySrc || '');
+  const [imgFailed, setImgFailed] = React.useState<boolean>(!primarySrc);
+
+  React.useEffect(() => {
+    const nextSrc = app.customIcon || nativeStreamUrl;
+    setActiveSrc(nextSrc || '');
+    setImgFailed(!nextSrc);
+  }, [app.customIcon, nativeStreamUrl]);
+
+  if (!imgFailed && activeSrc) {
+    return (
+      <img
+        src={activeSrc}
+        alt={app.name}
+        onError={() => {
+          if (nativeStreamUrl && activeSrc !== nativeStreamUrl) {
+            setActiveSrc(nativeStreamUrl);
+          } else {
+            setImgFailed(true);
+          }
+        }}
+        className={`${iconBoxClass} object-contain bg-slate-900/95 p-1 shadow-md shrink-0 border border-white/25`}
+      />
+    );
+  }
+
+  return renderBuiltInFallbackIcon(app, iconBoxClass);
+};
+
+export const renderDefaultAppIcon = (app: AppShortcut, size: 'dock' | 'drawer' = 'dock') => {
+  return <AppIconView app={app} size={size} />;
 };
 
 export const BottomDock: React.FC<BottomDockProps> = ({

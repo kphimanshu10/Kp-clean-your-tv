@@ -95,8 +95,8 @@ android {
         // API 21 (Android 5.0 Lollipop) ensures maximum compatibility with Iconic 32" Smart TV & Cloud TV OS
         minSdk = 21
         targetSdk = 34
-        versionCode = 7
-        versionName = "2.7.0"
+        versionCode = 8
+        versionName = "2.8.0"
     }
 
     buildTypes {
@@ -286,15 +286,7 @@ class InstalledAppsRepository(private val context: Context) {
             if (pkg == selfPkg || discovered.containsKey(pkg)) continue
 
             val label = info.loadLabel(pm)?.toString()?.trim().takeUnless { it.isNullOrEmpty() } ?: pkg
-            val icon = try {
-                pm.getApplicationIcon(pkg)
-            } catch (_: Exception) {
-                try {
-                    info.loadIcon(pm)
-                } catch (_: Exception) {
-                    pm.defaultActivityIcon
-                }
-            }
+            val icon = loadBestAppDrawable(pm, pkg, info)
 
             val priority = getPreferredDockPriority(pkg, label)
             val isPinned = if (orderedPinnedList != null) {
@@ -324,6 +316,43 @@ class InstalledAppsRepository(private val context: Context) {
         )
     }
 
+    private fun loadBestAppDrawable(pm: PackageManager, pkg: String, info: ResolveInfo? = null): Drawable {
+        if (info != null) {
+            try {
+                val actIcon = info.activityInfo?.loadIcon(pm)
+                if (actIcon != null) return actIcon
+            } catch (_: Exception) {
+            }
+            try {
+                val resIcon = info.loadIcon(pm)
+                if (resIcon != null) return resIcon
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            pm.getApplicationIcon(pkg)
+        } catch (_: Exception) {
+            pm.defaultActivityIcon
+        }
+    }
+
+    fun getAppIconPngStream(packageName: String): java.io.ByteArrayInputStream? {
+        val pm = context.packageManager
+        val drawable = loadBestAppDrawable(pm, packageName, null)
+        return try {
+            val size = 96
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+            val out = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 92, out)
+            java.io.ByteArrayInputStream(out.toByteArray())
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun toJsonArrayString(): String {
         val arr = JSONArray()
         for (app in getAllInstalledApps()) {
@@ -331,10 +360,8 @@ class InstalledAppsRepository(private val context: Context) {
             obj.put("label", app.label)
             obj.put("packageName", app.packageName)
             obj.put("activityName", app.activityName ?: "")
-            val iconUrl = drawableToDataUrl(app.icon)
-            if (iconUrl != null) {
-                obj.put("iconDataUrl", iconUrl)
-            }
+            val iconUrl = drawableToDataUrl(app.icon) ?: "https://kptv.local/app-icon/\${app.packageName}.png"
+            obj.put("iconDataUrl", iconUrl)
             arr.put(obj)
         }
         return arr.toString()
@@ -343,7 +370,7 @@ class InstalledAppsRepository(private val context: Context) {
     private fun drawableToDataUrl(drawable: Drawable?): String? {
         if (drawable == null) return null
         return try {
-            val size = 64
+            val size = 96
             val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             drawable.setBounds(0, 0, size, size)
@@ -1137,8 +1164,11 @@ object DeviceDiagnosticsHelper {
   'app/src/main/java/com/kptv/launcher/MainActivity.kt': `package com.kptv.launcher
 
 import android.annotation.SuppressLint
+import android.app.role.RoleManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -1194,6 +1224,9 @@ class MainActivity : AppCompatActivity() {
         private const val LOCAL_HOST = "kptv.local"
         private const val START_URL = "https://kptv.local/index.html"
         private const val QR_SERVER_PORT = 8765
+        private const val REQ_CODE_DEFAULT_HOME = 4010
+        private const val PREFS_NAME = "kptv_launcher_prefs"
+        private const val KEY_FIRST_RUN_HOME_ASKED = "first_run_home_asked"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1210,8 +1243,99 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         if (savedInstanceState == null) {
             binding.kpTvWebview.loadUrl(START_URL)
+            maybePromptDefaultHomeOnFirstRun()
         } else {
             binding.kpTvWebview.restoreState(savedInstanceState)
+        }
+    }
+
+    private fun maybePromptDefaultHomeOnFirstRun() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val alreadyAsked = prefs.getBoolean(KEY_FIRST_RUN_HOME_ASKED, false)
+        if (!alreadyAsked && !checkIsDefaultHomeLauncher()) {
+            prefs.edit().putBoolean(KEY_FIRST_RUN_HOME_ASKED, true).apply()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val roleManager = getSystemService(RoleManager::class.java)
+                    if (roleManager != null &&
+                        roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                        !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+                    ) {
+                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(intent, REQ_CODE_DEFAULT_HOME)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    fun checkIsDefaultHomeLauncher(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val roleManager = getSystemService(RoleManager::class.java)
+                if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                    if (roleManager.isRoleHeld(RoleManager.ROLE_HOME)) return true
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+            }
+            val resolveInfo = packageManager.resolveActivity(
+                homeIntent,
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+            val currentHomePkg = resolveInfo?.activityInfo?.packageName
+            currentHomePkg == packageName
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun requestSetDefaultHomeLauncher(): Boolean {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_FIRST_RUN_HOME_ASKED, true).apply()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val roleManager = getSystemService(RoleManager::class.java)
+                if (roleManager != null &&
+                    roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                    !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+                ) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(intent, REQ_CODE_DEFAULT_HOME)
+                    return true
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        try {
+            val homeSettingsIntent = Intent(Settings.ACTION_HOME_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (homeSettingsIntent.resolveActivity(packageManager) != null) {
+                startActivity(homeSettingsIntent)
+                return true
+            }
+        } catch (_: Exception) {
+        }
+
+        return try {
+            val homeChooser = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(Intent.createChooser(homeChooser, "Select KP TV as Default Launcher"))
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -1389,6 +1513,19 @@ class MainActivity : AppCompatActivity() {
 
                 var relPath = uri.path?.removePrefix("/") ?: "index.html"
                 if (relPath.isEmpty()) relPath = "index.html"
+
+                if (relPath.startsWith("app-icon/")) {
+                    val pkg = relPath.removePrefix("app-icon/").removeSuffix(".png").trim()
+                    val pngStream = appsRepo.getAppIconPngStream(pkg)
+                    if (pngStream != null) {
+                        val headers = mapOf(
+                            "Access-Control-Allow-Origin" to "*",
+                            "Cache-Control" to "public, max-age=3600"
+                        )
+                        return WebResourceResponse("image/png", null, 200, "OK", headers, pngStream)
+                    }
+                }
+
                 val assetPath = "www/\$relPath"
 
                 return try {
@@ -1507,6 +1644,16 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun isNativeAndroid(): Boolean = true
+
+        @JavascriptInterface
+        fun isDefaultHomeLauncher(): Boolean {
+            return checkIsDefaultHomeLauncher()
+        }
+
+        @JavascriptInterface
+        fun requestDefaultHomeLauncher(): Boolean {
+            return requestSetDefaultHomeLauncher()
+        }
 
         @JavascriptInterface
         fun getInstalledApps(): String {

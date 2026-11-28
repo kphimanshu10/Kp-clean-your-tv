@@ -12,8 +12,8 @@ android {
         // API 21 (Android 5.0 Lollipop) ensures maximum compatibility with Iconic 32" Smart TV & Cloud TV OS
         minSdk = 21
         targetSdk = 34
-        versionCode = 7
-        versionName = "2.7.0"
+        versionCode = 8
+        versionName = "2.8.0"
     }
 
     buildTypes {

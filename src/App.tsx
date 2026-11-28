@@ -96,8 +96,8 @@ export default function App() {
   });
 
   // Sync Real Installed Android Apps when running on the TV APK:
-  // - Dock Bar keeps default dock apps (NetMirror TV, JioHotstar, YouTube, Airtel) with default icon & name
-  // - Apps Section (AppDrawerModal) displays ONLY genuinely installed apps on the device with their default app icons
+  // - Dock Bar displays default dock apps (NetMirror TV, JioHotstar, YouTube, Airtel) or installed apps with their real default app icons
+  // - Apps Section (AppDrawerModal) displays installed apps on the device with their default app icons
   const syncInstalledAndroidApps = useCallback(() => {
     try {
       if (typeof window !== 'undefined' && window.AndroidTvBridge?.getInstalledApps) {
@@ -122,9 +122,11 @@ export default function App() {
                 matchedPackages.add(match.packageName.toLowerCase());
                 return {
                   ...dockItem,
-                  name: dockItem.name || match.label,
+                  name: match.label || dockItem.name,
                   packageName: match.packageName,
-                  customIcon: match.iconDataUrl || dockItem.customIcon,
+                  customIcon:
+                    match.iconDataUrl ||
+                    `https://kptv.local/app-icon/${encodeURIComponent(match.packageName)}.png`,
                   isInstalled: true,
                 };
               }
@@ -142,7 +144,9 @@ export default function App() {
                 packageName: na.packageName,
                 activityName: na.activityName,
                 iconType: 'custom' as const,
-                customIcon: na.iconDataUrl,
+                customIcon:
+                  na.iconDataUrl ||
+                  `https://kptv.local/app-icon/${encodeURIComponent(na.packageName)}.png`,
                 category: 'utility' as const,
                 inDock: false,
                 dockOrder: 100 + idx,
@@ -164,6 +168,44 @@ export default function App() {
   useEffect(() => {
     syncInstalledAndroidApps();
   }, [syncInstalledAndroidApps]);
+
+  // First-time default Home Launcher prompt state
+  const [showDefaultLauncherPrompt, setShowDefaultLauncherPrompt] = useState<boolean>(() => {
+    try {
+      const alreadyPrompted = localStorage.getItem('kptv_default_launcher_prompted_v1') === 'true';
+      if (alreadyPrompted) return false;
+      const isAlreadyDefault = Boolean(window.AndroidTvBridge?.isDefaultHomeLauncher?.());
+      return !isAlreadyDefault;
+    } catch {
+      return false;
+    }
+  });
+
+  const handleSetAsDefaultLauncherNow = useCallback(() => {
+    soundFx.playSelect();
+    try {
+      localStorage.setItem('kptv_default_launcher_prompted_v1', 'true');
+    } catch {
+      // ignore
+    }
+    setShowDefaultLauncherPrompt(false);
+    if (typeof window !== 'undefined' && window.AndroidTvBridge?.requestDefaultHomeLauncher) {
+      window.AndroidTvBridge.requestDefaultHomeLauncher();
+      showTvToast('Select "KP TV" and choose "Always" to set as default launcher.');
+    } else {
+      showTvToast('Default Launcher request saved. On Android TV, select KP TV -> Always.');
+    }
+  }, [showTvToast]);
+
+  const handleDismissDefaultLauncherPrompt = useCallback(() => {
+    soundFx.playBack();
+    try {
+      localStorage.setItem('kptv_default_launcher_prompted_v1', 'true');
+    } catch {
+      // ignore
+    }
+    setShowDefaultLauncherPrompt(false);
+  }, []);
 
   // Live Cricket Score State (No hardcoded demo scores)
   const [cricketStatus, setCricketStatus] = useState<CricketServiceStatus>('unconfigured');
@@ -370,8 +412,8 @@ export default function App() {
     (direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
       soundFx.playFocus();
 
-      // If a modal is open, move focus between interactive elements inside the modal
-      if (activeModal !== 'none') {
+      // If a modal or first-time default launcher prompt is open, move focus between interactive elements inside it
+      if (activeModal !== 'none' || showDefaultLauncherPrompt) {
         const focusables = Array.from(
           document.querySelectorAll<HTMLElement>(
             '.fixed.inset-0 button:not([disabled]), .fixed.inset-0 input:not([disabled]), .fixed.inset-0 select:not([disabled]), .fixed.inset-0 a[href], .fixed.inset-0 [tabindex="0"]'
@@ -401,17 +443,19 @@ export default function App() {
 
       setNavState(prev => handleSpatialDpad(direction, prev, totalDockButtons));
     },
-    [activeModal, totalDockButtons]
+    [activeModal, showDefaultLauncherPrompt, totalDockButtons]
   );
 
   // OK / Enter Action Handler
   const handleRemoteEnter = useCallback(() => {
     soundFx.playSelect();
 
-    if (activeModal !== 'none') {
+    if (activeModal !== 'none' || showDefaultLauncherPrompt) {
       const activeEl = document.activeElement as HTMLElement | null;
       if (activeEl && activeEl !== document.body) {
         activeEl.click();
+      } else if (showDefaultLauncherPrompt) {
+        handleSetAsDefaultLauncherNow();
       }
       return;
     }
@@ -446,6 +490,8 @@ export default function App() {
   }, [
     navState,
     activeModal,
+    showDefaultLauncherPrompt,
+    handleSetAsDefaultLauncherNow,
     dockApps,
     triggerAppLaunch,
     handleSetopboxDirectLaunch,
@@ -462,6 +508,10 @@ export default function App() {
       return;
     }
     soundFx.playBack();
+    if (showDefaultLauncherPrompt) {
+      handleDismissDefaultLauncherPrompt();
+      return;
+    }
     if (activeModal !== 'none') {
       setActiveModal('none');
       setCurrentScreen('home');
@@ -469,7 +519,7 @@ export default function App() {
     }
     setCurrentScreen('home');
     setNavState(prev => ({ ...prev, zone: 'cards', cardIndex: 0 }));
-  }, [activeModal]);
+  }, [activeModal, showDefaultLauncherPrompt, handleDismissDefaultLauncherPrompt]);
 
   // Home Button Action Handler
   const handleRemoteHome = useCallback(() => {
@@ -698,6 +748,49 @@ export default function App() {
             setActiveModal('apps');
           }}
         />
+
+        {/* First-Time Default Home Launcher Setup Prompt Modal */}
+        {showDefaultLauncherPrompt && activeModal === 'none' && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-6 select-none">
+            <div className="w-full max-w-md rounded-3xl bg-slate-900/95 border border-cyan-400/40 shadow-[0_0_50px_rgba(6,182,212,0.4)] p-6 space-y-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white font-black text-base shadow-[0_0_20px_rgba(6,182,212,0.6)]">
+                  KP
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-cyan-400">
+                    First-Time TV Setup
+                  </span>
+                  <h3 className="text-lg font-black text-white leading-tight">
+                    Use KP TV as Default Launcher?
+                  </h3>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Set KP TV as your default Home Launcher so pressing the Home button on your TV remote always opens KP TV directly.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleDismissDefaultLauncherPrompt}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 focus:ring-2 focus:ring-cyan-400 text-xs font-bold cursor-pointer"
+                >
+                  Ask Later
+                </button>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={handleSetAsDefaultLauncherNow}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white focus:ring-4 focus:ring-cyan-300 text-xs font-extrabold shadow-[0_0_20px_rgba(6,182,212,0.5)] cursor-pointer"
+                >
+                  Set as Default Launcher
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modals & Screens */}
         {activeModal === 'onlineplayer' && (
