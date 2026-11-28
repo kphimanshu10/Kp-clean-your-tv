@@ -59,11 +59,13 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val LOCAL_HOST = "kptv.local"
-        private const val START_URL = "https://kptv.local/index.html"
+        private const val APP_VERSION = "2.9.0"
+        private const val START_URL = "https://kptv.local/index.html?v=2.9.0-b9"
         private const val QR_SERVER_PORT = 8765
         private const val REQ_CODE_DEFAULT_HOME = 4010
         private const val PREFS_NAME = "kptv_launcher_prefs"
         private const val KEY_FIRST_RUN_HOME_ASKED = "first_run_home_asked"
+        private const val KEY_LAST_WEBVIEW_VERSION = "last_webview_version"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,11 +80,24 @@ class MainActivity : AppCompatActivity() {
 
         startLocalIptvQrServer()
         setupWebView()
+        clearWebViewCacheIfVersionChanged()
         if (savedInstanceState == null) {
             binding.kpTvWebview.loadUrl(START_URL)
             maybePromptDefaultHomeOnFirstRun()
         } else {
             binding.kpTvWebview.restoreState(savedInstanceState)
+        }
+    }
+
+    private fun clearWebViewCacheIfVersionChanged() {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val prevVer = prefs.getString(KEY_LAST_WEBVIEW_VERSION, "")
+            if (prevVer != APP_VERSION) {
+                binding.kpTvWebview.clearCache(true)
+                prefs.edit().putString(KEY_LAST_WEBVIEW_VERSION, APP_VERSION).apply()
+            }
+        } catch (_: Exception) {
         }
     }
 
@@ -336,7 +351,7 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
             allowFileAccess = false
             allowContentAccess = false
-            cacheMode = WebSettings.LOAD_DEFAULT
+            cacheMode = WebSettings.LOAD_NO_CACHE
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
 

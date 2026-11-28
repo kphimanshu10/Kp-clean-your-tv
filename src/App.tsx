@@ -96,31 +96,36 @@ export default function App() {
   });
 
   // Sync Real Installed Android Apps when running on the TV APK:
-  // - Dock Bar displays default dock apps (NetMirror TV, JioHotstar, YouTube, Airtel) or installed apps with their real default app icons
+  // - Dock Bar displays 4 visible app shortcuts (matching preferred dock apps first, and filling any remaining dock slots with actual installed TV apps with their real default app icons)
   // - Apps Section (AppDrawerModal) displays installed apps on the device with their default app icons
   const syncInstalledAndroidApps = useCallback(() => {
     try {
       if (typeof window !== 'undefined' && window.AndroidTvBridge?.getInstalledApps) {
         const rawJson = window.AndroidTvBridge.getInstalledApps();
         const nativeApps = JSON.parse(rawJson) as AndroidInstalledApp[];
-        if (Array.isArray(nativeApps)) {
+        if (Array.isArray(nativeApps) && nativeApps.length > 0) {
           setApps(prev => {
             const matchedPackages = new Set<string>();
-            const defaultDockDefaults = prev.filter(a => a.inDock);
+            const defaultDockDefaults = prev
+              .filter(a => a.inDock)
+              .sort((a, b) => a.dockOrder - b.dockOrder);
 
-            const updatedDock = defaultDockDefaults.map(dockItem => {
+            const updatedDock: AppShortcut[] = [];
+
+            for (const dockItem of defaultDockDefaults) {
               const match = nativeApps.find(
                 na =>
-                  na.packageName.toLowerCase() === dockItem.packageName.toLowerCase() ||
-                  (dockItem.id === 'youtube' && na.packageName.toLowerCase().includes('youtube')) ||
-                  (dockItem.id === 'hotstar' && na.packageName.toLowerCase().includes('hotstar')) ||
-                  (dockItem.id === 'netmirror' &&
-                    na.packageName.toLowerCase().includes('netmirror')) ||
-                  (dockItem.id === 'airtel' && na.packageName.toLowerCase().includes('airtel'))
+                  !matchedPackages.has(na.packageName.toLowerCase()) &&
+                  (na.packageName.toLowerCase() === dockItem.packageName.toLowerCase() ||
+                    (dockItem.id === 'youtube' && na.packageName.toLowerCase().includes('youtube')) ||
+                    (dockItem.id === 'hotstar' && na.packageName.toLowerCase().includes('hotstar')) ||
+                    (dockItem.id === 'netmirror' &&
+                      na.packageName.toLowerCase().includes('netmirror')) ||
+                    (dockItem.id === 'airtel' && na.packageName.toLowerCase().includes('airtel')))
               );
               if (match) {
                 matchedPackages.add(match.packageName.toLowerCase());
-                return {
+                updatedDock.push({
                   ...dockItem,
                   name: match.label || dockItem.name,
                   packageName: match.packageName,
@@ -128,13 +133,46 @@ export default function App() {
                     match.iconDataUrl ||
                     `https://kptv.local/app-icon/${encodeURIComponent(match.packageName)}.png`,
                   isInstalled: true,
-                };
+                  inDock: true,
+                  dockOrder: updatedDock.length,
+                });
               }
-              return {
+            }
+
+            // Fill remaining dock slots (up to 4) with actual installed TV apps or keep default brand icons
+            for (const na of nativeApps) {
+              if (updatedDock.length >= 4) break;
+              if (matchedPackages.has(na.packageName.toLowerCase())) continue;
+              matchedPackages.add(na.packageName.toLowerCase());
+              updatedDock.push({
+                id: `android-${na.packageName}`,
+                name: na.label || na.packageName,
+                packageName: na.packageName,
+                activityName: na.activityName,
+                iconType: 'custom' as const,
+                customIcon:
+                  na.iconDataUrl ||
+                  `https://kptv.local/app-icon/${encodeURIComponent(na.packageName)}.png`,
+                category: 'streaming' as const,
+                inDock: true,
+                dockOrder: updatedDock.length,
+                isPreinstalled: true,
+                isTrusted: true,
+                isInstalled: true,
+                accentColor: '#0284c7',
+              });
+            }
+
+            // If fewer than 4 apps are installed on the device, keep default dock items with their built-in default icons
+            for (const dockItem of defaultDockDefaults) {
+              if (updatedDock.length >= 4) break;
+              if (updatedDock.some(d => d.id === dockItem.id)) continue;
+              updatedDock.push({
                 ...dockItem,
-                isInstalled: false,
-              };
-            });
+                inDock: true,
+                dockOrder: updatedDock.length,
+              });
+            }
 
             const installedDrawerApps: AppShortcut[] = nativeApps
               .filter(na => !matchedPackages.has(na.packageName.toLowerCase()))

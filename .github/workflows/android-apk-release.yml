@@ -1,4 +1,4 @@
-name: Build & Upload KP TV Android APK (v2.8.0)
+name: Build & Upload KP TV Android APK (v2.9.0)
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build Web Bundle & Android TV Debug APK (v2.8.0)
+    name: Build Web Bundle & Android TV Debug APK (v2.9.0)
     runs-on: ubuntu-latest
 
     steps:
@@ -65,7 +65,7 @@ jobs:
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kp-tv-launcher-v2.8.0-debug-apk
+          name: kp-tv-launcher-v2.9.0-debug-apk
           path: releases/kp-tv-launcher-debug.apk
           if-no-files-found: error
 
@@ -73,16 +73,16 @@ jobs:
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v2.8.0-latest' }}
-          name: KP TV Smart TV Launcher v2.8.0 (${{ github.ref_name }})
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v2.9.0-latest' }}
+          name: KP TV Smart TV Launcher v2.9.0 (${{ github.ref_name }})
           body: |
-            ### KP TV – Smart TV Launcher v2.8.0 (Android TV / Google TV / Cloud TV OS)
-            - **Package Name**: `com.kptv.launcher` (Version `2.8.0`, Build `8`)
+            ### KP TV – Smart TV Launcher v2.9.0 (Android TV / Google TV / Cloud TV OS)
+            - **Package Name**: `com.kptv.launcher` (Version `2.9.0`, Build `9`)
             - **SDK Compatibility**: Android 5.0 (API 21) – Android 14 (API 34)
-            - **What's New in v2.8.0**:
-              1. **First-Time Default Home Launcher Prompt**: Prompts users on first launch to set KP TV as the device's default Home Launcher (`RoleManager.ROLE_HOME` on Android 10+ with `ACTION_HOME_SETTINGS` & `CATEGORY_HOME` chooser support, plus a D-pad friendly first-time setup prompt modal and Settings button).
-              2. **App Default Icons Always Visible**: Added native `https://kptv.local/app-icon/<packageName>.png` PackageManager icon streaming, 96x96 PNG data-URI extraction, and automatic fallback badges so every app's default icon is always visible in both the Bottom Dock and App Drawer.
-              3. **D-Pad Smooth Scroll & Pre-Focus Viewport Check (`AppDrawerModal`)**: Checks `getBoundingClientRect()` vs container dimensions and triggers smooth `scrollTo` before applying focus.
-              4. **Direct Link Player (with Full Screen Play) & Setopbox 1-Tap Switcher**: Streamlined launcher with inline `HDMI 1`, `HDMI 2`, and `AV` source buttons.
+            - **What's New in v2.9.0**:
+              1. **Automatic WebView Cache Invalidation (`LOAD_NO_CACHE` + `clearCache(true)`)**: Guarantees APK upgrades immediately display the latest launcher UI without stale WebView disk cache.
+              2. **First-Time Default Home Launcher Prompt**: Prompts users on first launch to set KP TV as the device's default Home Launcher (`RoleManager.ROLE_HOME` on Android 10+ with `ACTION_HOME_SETTINGS` & `CATEGORY_HOME` chooser support, plus a D-pad friendly first-time setup prompt modal and Settings button).
+              3. **App Default Icons Always Visible**: Added native `https://kptv.local/app-icon/<packageName>.png` PackageManager icon streaming, 96x96 PNG data-URI extraction, and automatic fallback badges so every app's default icon is always visible in both the Bottom Dock and App Drawer.
+              4. **D-Pad Smooth Scroll & Pre-Focus Viewport Check (`AppDrawerModal`)**: Checks `getBoundingClientRect()` vs container dimensions and triggers smooth `scrollTo` before applying focus.
           files: |
             releases/kp-tv-launcher-debug.apk

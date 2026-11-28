@@ -1,19 +1,19 @@
 {
   "appName": "KP TV – Smart TV Launcher",
   "packageName": "com.kptv.launcher",
-  "versionName": "2.8.0",
-  "versionCode": 8,
+  "versionName": "2.9.0",
+  "versionCode": 9,
   "releaseDate": "2026-11-28",
   "downloadUrl": "/kp-tv-launcher-debug.apk",
-  "fileSizeBytes": 7553984,
-  "downloadSizeBytes": 7553984,
-  "sha256": "160c1c4f6dd4de57a264863703a9685579805c7cbf31962bad6917d09440cdf4",
+  "fileSizeBytes": 7554520,
+  "downloadSizeBytes": 7554520,
+  "sha256": "f4064b637549770a718c9a3fa48040a0660807b3509f167ae565af50809d7a8f",
   "minAndroidSdk": 21,
   "targetAndroidSdk": 34,
   "releaseNotes": [
+    "Added automatic WebView disk-cache invalidation on version upgrades (LOAD_NO_CACHE + clearCache(true)) so newly installed APK updates always render immediately without serving cached assets.",
     "Added first-time setup prompt to set KP TV as the device's default Home Launcher (using Android RoleManager.ROLE_HOME on Android 10+ and HOME intent chooser / Home Settings fallback), plus a Set as Default Launcher button in Settings.",
     "Guaranteed default and installed app icons are always visible in the Bottom Dock and App Drawer with native https://kptv.local/app-icon/<packageName>.png streaming, 96x96 PNG data URLs, and automatic vector/brand icon badge fallbacks.",
-    "Enhanced AppDrawerModal D-pad focus management with pre-focus viewport bounds checking and smooth scrollTo animations.",
-    "Streamlined Link Player with Full Screen Play and 1-tap Setopbox HDMI 1, HDMI 2, and AV source buttons."
+    "Enhanced AppDrawerModal D-pad focus management with pre-focus viewport bounds checking and smooth scrollTo animations."
   ]
 }
