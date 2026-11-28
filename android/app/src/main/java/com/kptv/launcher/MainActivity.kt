@@ -387,11 +387,16 @@ class MainActivity : AppCompatActivity() {
                 return try {
                     val inputStream = assets.open(assetPath)
                     val mimeType = resolveMimeType(relPath)
+                    val isTextAsset = mimeType.startsWith("text/") ||
+                        mimeType == "application/javascript" ||
+                        mimeType == "application/json" ||
+                        mimeType == "image/svg+xml"
+                    val encoding = if (isTextAsset) "UTF-8" else null
                     val headers = mapOf(
                         "Access-Control-Allow-Origin" to "*",
                         "Cache-Control" to "no-cache"
                     )
-                    WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, inputStream)
+                    WebResourceResponse(mimeType, encoding, 200, "OK", headers, inputStream)
                 } catch (_: Exception) {
                     null
                 }

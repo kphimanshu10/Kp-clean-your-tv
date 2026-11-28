@@ -207,6 +207,17 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Quick Status + Weather + Action Icons */}
       <div className="flex items-center space-x-3">
+        {/* 1-Click Direct Updated APK Download Pill (visible on Web Preview) */}
+        {typeof window !== 'undefined' && !window.AndroidTvBridge?.isNativeAndroid?.() && (
+          <a
+            href="/kp-tv-launcher-debug.apk?v=2.9.0-b9"
+            download="kp-tv-launcher-v2.9.0-debug.apk"
+            title="Download Updated KP TV Launcher APK v2.9.0 (Build 9)"
+            className="px-3.5 py-1.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)] border border-emerald-300/40 flex items-center space-x-1.5 transition-all cursor-pointer"
+          >
+            <span>Download APK (v2.9.0)</span>
+          </a>
+        )}
 
         {/* Quick Storage & Network Status Pill */}
         {showQuickStatusBar && (

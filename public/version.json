@@ -5,9 +5,9 @@
   "versionCode": 9,
   "releaseDate": "2026-11-28",
   "downloadUrl": "/kp-tv-launcher-debug.apk",
-  "fileSizeBytes": 7554520,
-  "downloadSizeBytes": 7554520,
-  "sha256": "f4064b637549770a718c9a3fa48040a0660807b3509f167ae565af50809d7a8f",
+  "fileSizeBytes": 7554968,
+  "downloadSizeBytes": 7554968,
+  "sha256": "53304ec3752fd3803b5edf2b6381ad87458591a53a7392af9c5890bc6fa244b1",
   "minAndroidSdk": 21,
   "targetAndroidSdk": 34,
   "releaseNotes": [
